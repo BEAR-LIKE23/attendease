@@ -4,7 +4,7 @@ import { TeacherDashboard } from './components/TeacherDashboard';
 import { StudentDashboard } from './components/StudentDashboard';
 import { LoginPage } from './components/LoginPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { GraduationCap, BookOpen, LogOut } from 'lucide-react';
+import { GraduationCap, BookOpen, LogOut, CheckCircle, Users } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { user, signOut } = useAuth();
@@ -23,58 +23,111 @@ const AppContent: React.FC = () => {
   }, [user, role]);
 
   const renderRoleSelection = () => (
-    <div className="min-h-screen flex flex-col items-center justify-center relative overflow-hidden bg-slate-50">
-      {/* Background Blobs */}
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-      <div className="absolute top-[-10%] right-[-10%] w-96 h-96 bg-yellow-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-      <div className="absolute bottom-[-20%] left-[20%] w-96 h-96 bg-pink-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
+    <div className="min-h-screen flex flex-col relative overflow-hidden bg-slate-50">
+      {/* Background Elements */}
+      <div className="absolute top-0 right-0 w-2/3 h-full bg-gradient-to-l from-indigo-50/50 to-transparent -z-10"></div>
+      <div className="absolute bottom-0 left-0 w-1/3 h-1/3 bg-gradient-to-tr from-purple-50/50 to-transparent -z-10 rounded-full blur-3xl"></div>
 
-      <div className="text-center mb-16 z-10 animate-fade-in-up">
-        <div className="inline-block mb-4 px-4 py-1.5 rounded-full bg-white/50 backdrop-blur-sm border border-white/60 text-sm font-medium text-indigo-600 shadow-sm">
-          ✨ Smart Attendance Management
+      <div className="container mx-auto px-4 flex-1 flex flex-col lg:flex-row items-center justify-center gap-12 py-12">
+
+        {/* Left Column: Text & Actions */}
+        <div className="flex-1 max-w-2xl z-10 animate-fade-in-up">
+          <div className="inline-flex items-center gap-2 mb-6 px-4 py-2 rounded-full bg-white border border-indigo-100 shadow-sm">
+            <span className="flex h-2 w-2 rounded-full bg-indigo-500 animate-pulse"></span>
+            <span className="text-sm font-bold text-indigo-900 tracking-wide uppercase">Next-Gen Classroom</span>
+          </div>
+
+          <h1 className="text-5xl lg:text-7xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
+            Attendance <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Made Simple.</span>
+          </h1>
+
+          <p className="text-xl text-slate-600 mb-10 leading-relaxed max-w-lg">
+            Experience the future of education management. Seamless QR check-ins, real-time insights, and effortless course tracking.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-lg">
+            <button
+              onClick={() => setRole(UserRole.TEACHER)}
+              className="group relative bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-indigo-50 hover:-translate-y-1 overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                <BookOpen className="w-24 h-24 text-indigo-600 transform rotate-12" />
+              </div>
+              <div className="relative z-10">
+                <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center mb-4 text-indigo-600 group-hover:scale-110 transition-transform">
+                  <BookOpen size={24} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-1">Teacher Portal</h3>
+                <p className="text-sm text-slate-500 mb-4">Manage classes & insights</p>
+                <div className="flex items-center text-indigo-600 font-bold text-sm group-hover:gap-2 transition-all">
+                  Access Dashboard <span className="opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                </div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setRole(UserRole.STUDENT)}
+              className="group relative bg-white p-6 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 border border-emerald-50 hover:-translate-y-1 overflow-hidden"
+            >
+              <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+                <GraduationCap className="w-24 h-24 text-emerald-600 transform -rotate-12" />
+              </div>
+              <div className="relative z-10">
+                <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center mb-4 text-emerald-600 group-hover:scale-110 transition-transform">
+                  <GraduationCap size={24} />
+                </div>
+                <h3 className="text-xl font-bold text-slate-800 mb-1">Student Portal</h3>
+                <p className="text-sm text-slate-500 mb-4">Join courses & scan QR</p>
+                <div className="flex items-center text-emerald-600 font-bold text-sm group-hover:gap-2 transition-all">
+                  Student Login <span className="opacity-0 group-hover:opacity-100 transition-opacity">&rarr;</span>
+                </div>
+              </div>
+            </button>
+          </div>
         </div>
-        <h1 className="text-6xl font-black text-slate-900 mb-4 tracking-tight">
-          Attend<span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Ease</span>
-        </h1>
-        <p className="text-xl text-slate-600 max-w-2xl mx-auto leading-relaxed">
-          The next-generation classroom experience. Seamless QR attendance, real-time insights, and effortless management.
-        </p>
+
+        {/* Right Column: Hero Image */}
+        <div className="flex-1 relative z-10 animate-fade-in-up delay-200 hidden lg:block">
+          <div className="relative">
+            <div className="absolute inset-0 bg-gradient-to-tr from-indigo-500/20 to-purple-500/20 rounded-full blur-3xl transform scale-90"></div>
+            <img
+              src="/assets/hero-3d.png"
+              alt="Future Classroom"
+              className="relative z-10 w-full max-w-2xl mx-auto drop-shadow-2xl hover:scale-[1.02] transition-transform duration-500"
+            />
+
+            {/* Floating Badge 1 */}
+            <div className="absolute -top-8 -right-8 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob animation-delay-2000">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600">
+                  <CheckCircle size={20} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-bold uppercase">Status</p>
+                  <p className="font-bold text-slate-800">Attendance Marked</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Floating Badge 2 */}
+            <div className="absolute bottom-12 -left-12 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
+                  <Users size={20} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-bold uppercase">Live Class</p>
+                  <p className="font-bold text-slate-800">CS101: Active</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-5xl w-full px-4 z-10">
-        <button
-          onClick={() => setRole(UserRole.TEACHER)}
-          className="group relative bg-white/80 backdrop-blur-xl p-10 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-white/60 flex flex-col items-center text-center overflow-hidden hover:-translate-y-2 animate-fade-in-up delay-100"
-        >
-          <div className="absolute inset-0 bg-gradient-to-br from-indigo-50 to-purple-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-          <div className="w-24 h-24 bg-indigo-100 rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform duration-500 shadow-inner relative z-10">
-            <BookOpen className="w-10 h-10 text-indigo-600" />
-          </div>
-          <h2 className="text-3xl font-bold text-slate-800 mb-3 relative z-10">Teacher Portal</h2>
-          <p className="text-slate-500 relative z-10">Manage sessions, track attendance, and view AI-powered insights.</p>
-          <div className="mt-8 px-6 py-2 bg-indigo-600 text-white rounded-full font-medium opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 shadow-lg shadow-indigo-200 relative z-10">
-            Enter Dashboard &rarr;
-          </div>
-        </button>
-
-        <button
-          onClick={() => setRole(UserRole.STUDENT)}
-          className="group relative bg-white/80 backdrop-blur-xl p-10 rounded-3xl shadow-xl hover:shadow-2xl transition-all duration-500 border border-white/60 flex flex-col items-center text-center overflow-hidden hover:-translate-y-2 animate-fade-in-up delay-200"
-        >
-          <div className="absolute inset-0 bg-gradient-to-br from-emerald-50 to-teal-50 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
-          <div className="w-24 h-24 bg-emerald-100 rounded-2xl flex items-center justify-center mb-8 group-hover:scale-110 transition-transform duration-500 shadow-inner relative z-10">
-            <GraduationCap className="w-10 h-10 text-emerald-600" />
-          </div>
-          <h2 className="text-3xl font-bold text-slate-800 mb-3 relative z-10">Student Portal</h2>
-          <p className="text-slate-500 relative z-10">Login to view history, check your schedule, and scan QR codes.</p>
-          <div className="mt-8 px-6 py-2 bg-emerald-600 text-white rounded-full font-medium opacity-0 group-hover:opacity-100 transform translate-y-4 group-hover:translate-y-0 transition-all duration-300 shadow-lg shadow-emerald-200 relative z-10">
-            Student Login &rarr;
-          </div>
-        </button>
-      </div>
-
-      <div className="mt-16 text-slate-400 text-sm font-medium animate-fade-in-up delay-300">
-        &copy; {new Date().getFullYear()} AttendEase Systems. Built for the future of education.
+      <div className="text-center py-6 text-slate-400 text-sm font-medium animate-fade-in-up delay-300">
+        &copy; {new Date().getFullYear()} AttendEase Systems. Built for the future.
       </div>
     </div>
   );

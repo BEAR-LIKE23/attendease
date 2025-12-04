@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Users, QrCode, BarChart3, Clock,
   CheckCircle, RefreshCw, XCircle, BrainCircuit, Download,
-  Calendar, Search, Filter
+  Calendar, Search, Filter, BookOpen, Copy
 } from 'lucide-react';
-import { ClassSession, AttendanceRecord } from '../types';
+import { ClassSession, AttendanceRecord, Course } from '../types';
 import { generateAttendanceReport } from '../services/geminiService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from '../services/supabaseClient';
@@ -21,8 +21,9 @@ interface TeacherDashboardProps {
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
   const { user } = useAuth();
   const [sessions, setSessions] = useState<ClassSession[]>([]);
+  const [courses, setCourses] = useState<Course[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'create' | 'live' | 'history'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'live' | 'history' | 'courses'>('courses');
   const [newClassName, setNewClassName] = useState('');
   const [newClassTopic, setNewClassTopic] = useState('');
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
@@ -54,6 +55,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
           createdAt: s.created_at
         }));
         setSessions(mappedSessions);
+      }
+
+      // Fetch Courses
+      const { data: coursesData } = await supabase
+        .from('courses')
+        .select('*')
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false });
+
+      if (coursesData) {
+        const mappedCourses: Course[] = coursesData.map(c => ({
+          id: c.id,
+          name: c.name,
+          code: c.code,
+          enrollmentCode: c.enrollment_code,
+          description: c.description,
+          schedule: c.schedule,
+          createdAt: c.created_at
+        }));
+        setCourses(mappedCourses);
       }
 
       // Fetch attendance for these sessions
@@ -151,6 +172,45 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
         console.error("Error creating session:", error);
         alert("Failed to create session. Please try again.");
       }
+    }
+  };
+
+  const handleCreateCourse = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    // Generate a random 6-char enrollment code
+    const enrollmentCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    const { data, error } = await supabase
+      .from('courses')
+      .insert({
+        created_by: user.id,
+        name: newClassName,
+        code: newClassTopic, // Using topic input as Course Code (e.g. CS101)
+        enrollment_code: enrollmentCode,
+        description: 'Created via dashboard',
+      })
+      .select()
+      .single();
+
+    if (data && !error) {
+      const newCourse: Course = {
+        id: data.id,
+        name: data.name,
+        code: data.code,
+        enrollmentCode: data.enrollment_code,
+        description: data.description,
+        schedule: data.schedule,
+        createdAt: data.created_at
+      };
+      setCourses(prev => [newCourse, ...prev]);
+      setNewClassName('');
+      setNewClassTopic('');
+      alert(`Course Created! Enrollment Code: ${enrollmentCode}`);
+    } else {
+      console.error("Error creating course:", error);
+      alert(`Failed to create course: ${error?.message || JSON.stringify(error)}`);
     }
   };
 
@@ -399,6 +459,92 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     );
   };
 
+  const renderCoursesTab = () => (
+    <div className="max-w-4xl mx-auto animate-fade-in-up space-y-8">
+      {/* Create Course Card */}
+      <div className="glass-card p-8 rounded-2xl">
+        <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
+          <BookOpen className="text-indigo-600" /> Create New Course
+        </h3>
+        <form onSubmit={handleCreateCourse} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="md:col-span-1">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Course Code</label>
+            <input
+              type="text"
+              value={newClassTopic} // Reusing state
+              onChange={(e) => setNewClassTopic(e.target.value)}
+              placeholder="e.g. CS101"
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+              required
+            />
+          </div>
+          <div className="md:col-span-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2">Course Name</label>
+            <div className="flex gap-4">
+              <input
+                type="text"
+                value={newClassName} // Reusing state
+                onChange={(e) => setNewClassName(e.target.value)}
+                placeholder="e.g. Intro to Computer Science"
+                className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                required
+              />
+              <button
+                type="submit"
+                className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md"
+              >
+                Create
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+
+      {/* Courses List */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {courses.length === 0 ? (
+          <div className="col-span-1 md:col-span-2 text-center py-12 bg-white/50 rounded-2xl border border-dashed border-gray-200">
+            <img src="/assets/empty-courses.png" alt="No Courses" className="w-48 h-48 mx-auto mb-4 object-contain opacity-80" />
+            <h4 className="text-xl font-bold text-gray-700">No courses created yet</h4>
+            <p className="text-gray-500 mt-2">Create your first course to get started!</p>
+          </div>
+        ) : (
+          courses.map(course => (
+            <div key={course.id} className="glass-card p-6 rounded-2xl border-l-4 border-indigo-500 hover:shadow-lg transition-all">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h4 className="text-xl font-bold text-gray-800">{course.code}</h4>
+                  <p className="text-gray-600">{course.name}</p>
+                </div>
+                <div className="bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100">
+                  <p className="text-xs text-indigo-600 font-bold uppercase tracking-wider mb-1">Enrollment Code</p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-lg font-black text-indigo-900">{course.enrollmentCode}</span>
+                    <button
+                      onClick={() => navigator.clipboard.writeText(course.enrollmentCode)}
+                      className="text-indigo-400 hover:text-indigo-600"
+                      title="Copy Code"
+                    >
+                      <Copy size={16} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-sm text-gray-500 border-t border-gray-100 pt-4">
+                <span className="flex items-center gap-1">
+                  <Calendar size={14} /> {new Date(course.createdAt).toLocaleDateString()}
+                </span>
+                <span className="flex items-center gap-1">
+                  <Users size={14} /> 0 Students {/* Placeholder for enrollment count */}
+                </span>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   const renderHistoryTab = () => {
     // Basic Chart Data preparation
     const chartData = sessions.map(s => ({
@@ -413,7 +559,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
             <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
               <BarChart3 className="text-indigo-600" size={24} /> Attendance Trends
             </h3>
-            <div className="h-72 w-full">
+            <div className="h-72 w-full min-h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -442,7 +588,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
             </h3>
             <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
               {sessions.filter(s => !s.isActive).length === 0 ? (
-                <p className="text-gray-400 text-center py-10">No past sessions yet.</p>
+                <div className="text-center py-10">
+                  <img src="/assets/empty-history.png" alt="No History" className="w-32 h-32 mx-auto mb-3 object-contain opacity-60" />
+                  <p className="text-gray-400">No past sessions yet.</p>
+                </div>
               ) : (
                 sessions.filter(s => !s.isActive).map(session => (
                   <div
@@ -541,6 +690,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
       <div className="flex justify-center mb-10">
         <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl shadow-sm border border-gray-200 inline-flex">
           <button
+            onClick={() => setActiveTab('courses')}
+            className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'courses' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+          >
+            Courses
+          </button>
+          <button
             onClick={() => setActiveTab('create')}
             className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'create' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
           >
@@ -561,6 +716,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
         </div>
       </div>
 
+      {activeTab === 'courses' && renderCoursesTab()}
       {activeTab === 'create' && renderCreateTab()}
       {activeTab === 'live' && renderLiveTab()}
       {activeTab === 'history' && renderHistoryTab()}

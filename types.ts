@@ -12,8 +12,19 @@ export interface AttendanceRecord {
   timestamp: string; // ISO string
 }
 
+export interface Course {
+  id: string;
+  name: string;
+  code: string;
+  enrollmentCode: string;
+  description?: string;
+  schedule?: string;
+  createdAt: string;
+}
+
 export interface ClassSession {
   id: string;
+  courseId?: string;
   className: string;
   topic: string;
   code: string; // The unique code generated for QR

@@ -3,6 +3,7 @@ import { QrCode, History, BookOpen, Calendar, CheckCircle, XCircle, LogOut } fro
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { Html5QrcodeScanner } from 'html5-qrcode';
+import { Course } from '../types';
 
 interface AttendanceRecord {
     id: string;
@@ -23,12 +24,56 @@ export const StudentDashboard: React.FC = () => {
     const [history, setHistory] = useState<AttendanceRecord[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
     const [showScanner, setShowScanner] = useState(false);
+    const [courses, setCourses] = useState<Course[]>([]);
+    const [enrollmentCode, setEnrollmentCode] = useState('');
+    const [loadingCourses, setLoadingCourses] = useState(false);
 
     useEffect(() => {
         if (activeTab === 'history') {
             fetchHistory();
+        } else if (activeTab === 'courses') {
+            fetchCourses();
         }
     }, [activeTab]);
+
+    const fetchCourses = async () => {
+        setLoadingCourses(true);
+        try {
+            const { data, error } = await supabase
+                .from('enrollments')
+                .select(`
+                    course_id,
+                    courses (
+                        id,
+                        name,
+                        code,
+                        description,
+                        schedule,
+                        created_at
+                    )
+                `)
+                .eq('student_uid', user?.id);
+
+            if (error) throw error;
+
+            if (data) {
+                const mappedCourses: Course[] = data.map((item: any) => ({
+                    id: item.courses.id,
+                    name: item.courses.name,
+                    code: item.courses.code,
+                    enrollmentCode: '', // Not needed for student view usually, or hidden
+                    description: item.courses.description,
+                    schedule: item.courses.schedule,
+                    createdAt: item.courses.created_at
+                }));
+                setCourses(mappedCourses);
+            }
+        } catch (error) {
+            console.error('Error fetching courses:', error);
+        } finally {
+            setLoadingCourses(false);
+        }
+    };
 
     useEffect(() => {
         if (showScanner && activeTab === 'scan') {
@@ -125,6 +170,48 @@ export const StudentDashboard: React.FC = () => {
             setStatus('success');
             setMessage(`Successfully checked in to ${sessionData.class_name}!`);
             setSessionCode('');
+        } catch (err: any) {
+            setStatus('error');
+            setMessage(err.message);
+        }
+    };
+
+    const handleEnroll = async (e: React.FormEvent) => {
+        e.preventDefault();
+        setStatus('loading');
+        setMessage('');
+
+        try {
+            // 1. Find Course by Enrollment Code
+            const { data: courseData, error: courseError } = await supabase
+                .from('courses')
+                .select('id, name')
+                .eq('enrollment_code', enrollmentCode.toUpperCase())
+                .single();
+
+            if (courseError || !courseData) {
+                throw new Error('Invalid enrollment code');
+            }
+
+            // 2. Create Enrollment
+            const { error: enrollError } = await supabase
+                .from('enrollments')
+                .insert({
+                    course_id: courseData.id,
+                    student_uid: user?.id
+                });
+
+            if (enrollError) {
+                if (enrollError.code === '23505') {
+                    throw new Error('You are already enrolled in this course');
+                }
+                throw enrollError;
+            }
+
+            setStatus('success');
+            setMessage(`Successfully enrolled in ${courseData.name}!`);
+            setEnrollmentCode('');
+            fetchCourses(); // Refresh list
         } catch (err: any) {
             setStatus('error');
             setMessage(err.message);
@@ -278,8 +365,9 @@ export const StudentDashboard: React.FC = () => {
                                 <div className="text-center py-12 text-slate-400">Loading history...</div>
                             ) : history.length === 0 ? (
                                 <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-slate-200">
-                                    <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                                    <p className="text-slate-500 font-medium">No attendance records yet</p>
+                                    <img src="/assets/empty-history.png" alt="No History" className="w-48 h-48 mx-auto mb-4 object-contain opacity-80" />
+                                    <p className="text-slate-500 font-medium text-lg">No attendance records yet</p>
+                                    <p className="text-sm text-slate-400 mt-1">Your check-in history will appear here.</p>
                                 </div>
                             ) : (
                                 history.map((record) => (
@@ -303,10 +391,62 @@ export const StudentDashboard: React.FC = () => {
                     )}
 
                     {activeTab === 'courses' && (
-                        <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-slate-200">
-                            <BookOpen className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                            <p className="text-slate-500 font-medium">Course enrollment coming soon!</p>
-                            <p className="text-xs text-slate-400 mt-1">Ask your teacher to add you to a course.</p>
+                        <div className="space-y-8">
+                            {/* Enrollment Card */}
+                            <div className="glass-card p-6 md:p-8 rounded-2xl shadow-lg">
+                                <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-3">
+                                    <BookOpen className="text-indigo-600" /> My Courses
+                                </h2>
+
+                                <form onSubmit={handleEnroll} className="flex gap-4 mb-8">
+                                    <input
+                                        type="text"
+                                        value={enrollmentCode}
+                                        onChange={(e) => setEnrollmentCode(e.target.value)}
+                                        placeholder="Enter Course Enrollment Code"
+                                        className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
+                                        required
+                                    />
+                                    <button
+                                        type="submit"
+                                        disabled={status === 'loading'}
+                                        className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md disabled:opacity-50"
+                                    >
+                                        {status === 'loading' ? 'Joining...' : 'Join Course'}
+                                    </button>
+                                </form>
+
+                                {status !== 'idle' && message && (
+                                    <div className={`p-4 rounded-xl mb-6 flex items-start gap-3 ${status === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+                                        {status === 'success' ? <CheckCircle className="shrink-0" /> : <XCircle className="shrink-0" />}
+                                        <p className="font-medium">{message}</p>
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    {loadingCourses ? (
+                                        <p className="text-slate-400 col-span-2 text-center py-8">Loading courses...</p>
+                                    ) : courses.length === 0 ? (
+                                        <div className="col-span-2 text-center py-12 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
+                                            <img src="/assets/empty-courses.png" alt="No Courses" className="w-48 h-48 mx-auto mb-4 object-contain opacity-80" />
+                                            <p className="text-slate-500 font-medium text-lg">No courses yet</p>
+                                            <p className="text-sm text-slate-400 mt-1">Enter a code above to join your first class!</p>
+                                        </div>
+                                    ) : (
+                                        courses.map(course => (
+                                            <div key={course.id} className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                                                <h3 className="font-bold text-lg text-slate-800">{course.code}</h3>
+                                                <p className="text-slate-600 font-medium">{course.name}</p>
+                                                <p className="text-sm text-slate-400 mt-2">{course.description}</p>
+                                                <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center text-sm text-slate-500">
+                                                    <span>{course.schedule || 'No schedule'}</span>
+                                                    <span className="bg-indigo-50 text-indigo-600 px-2 py-1 rounded-md font-bold text-xs">Enrolled</span>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
