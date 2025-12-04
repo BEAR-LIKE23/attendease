@@ -1,0 +1,7 @@
+{
+  "name": "AttendEase",
+  "description": "A smart, QR-code based class attendance automation system with AI-powered insights.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
