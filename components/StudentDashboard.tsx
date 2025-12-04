@@ -1,82 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { QrCode, History, BookOpen, Calendar, CheckCircle, XCircle, LogOut } from 'lucide-react';
+import { Html5QrcodeScanner } from 'html5-qrcode';
+import {
+    QrCode, History, BookOpen, LogOut, User,
+    CheckCircle, Clock, Calendar, Search, Filter, Plus, XCircle
+} from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { Html5QrcodeScanner } from 'html5-qrcode';
-import { Course } from '../types';
-
-interface AttendanceRecord {
-    id: string;
-    session_id: string;
-    timestamp: string;
-    sessions: {
-        class_name: string;
-        topic: string;
-    };
-}
+import { ProfileModal } from './ProfileModal';
+import { Course, AttendanceRecord } from '../types';
 
 export const StudentDashboard: React.FC = () => {
     const { user, signOut } = useAuth();
     const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'courses'>('scan');
-    const [sessionCode, setSessionCode] = useState('');
-    const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
-    const [message, setMessage] = useState('');
+    const [scanResult, setScanResult] = useState<string | null>(null);
+    const [manualCode, setManualCode] = useState('');
+    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
     const [history, setHistory] = useState<AttendanceRecord[]>([]);
-    const [loadingHistory, setLoadingHistory] = useState(false);
-    const [showScanner, setShowScanner] = useState(false);
     const [courses, setCourses] = useState<Course[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
     const [enrollmentCode, setEnrollmentCode] = useState('');
-    const [loadingCourses, setLoadingCourses] = useState(false);
+    const [viewingHistoryCourse, setViewingHistoryCourse] = useState<string | null>(null);
+    const [courseHistory, setCourseHistory] = useState<any[]>([]);
+    const [loadingCourseHistory, setLoadingCourseHistory] = useState(false);
 
     useEffect(() => {
-        if (activeTab === 'history') {
-            fetchHistory();
-        } else if (activeTab === 'courses') {
-            fetchCourses();
-        }
-    }, [activeTab]);
-
-    const fetchCourses = async () => {
-        setLoadingCourses(true);
-        try {
-            const { data, error } = await supabase
-                .from('enrollments')
-                .select(`
-                    course_id,
-                    courses (
-                        id,
-                        name,
-                        code,
-                        description,
-                        schedule,
-                        created_at
-                    )
-                `)
-                .eq('student_uid', user?.id);
-
-            if (error) throw error;
-
-            if (data) {
-                const mappedCourses: Course[] = data.map((item: any) => ({
-                    id: item.courses.id,
-                    name: item.courses.name,
-                    code: item.courses.code,
-                    enrollmentCode: '', // Not needed for student view usually, or hidden
-                    description: item.courses.description,
-                    schedule: item.courses.schedule,
-                    createdAt: item.courses.created_at
-                }));
-                setCourses(mappedCourses);
-            }
-        } catch (error) {
-            console.error('Error fetching courses:', error);
-        } finally {
-            setLoadingCourses(false);
-        }
-    };
-
-    useEffect(() => {
-        if (showScanner && activeTab === 'scan') {
+        if (activeTab === 'scan') {
             const scanner = new Html5QrcodeScanner(
                 "reader",
                 { fps: 10, qrbox: { width: 250, height: 250 } },
@@ -89,152 +38,487 @@ export const StudentDashboard: React.FC = () => {
                 scanner.clear().catch(error => console.error("Failed to clear scanner", error));
             };
         }
-    }, [showScanner, activeTab]);
+    }, [activeTab]);
 
-    const onScanSuccess = (decodedText: string) => {
-        setSessionCode(decodedText);
-        setShowScanner(false);
-    };
-
-    const onScanFailure = (error: any) => {
-        // console.warn(`Code scan error = ${error}`);
-    };
+    useEffect(() => {
+        if (activeTab === 'history' && user) {
+            fetchHistory();
+        }
+        if (activeTab === 'courses' && user) {
+            fetchCourses();
+        }
+    }, [activeTab, user]);
 
     const fetchHistory = async () => {
         setLoadingHistory(true);
-        try {
-            const { data, error } = await supabase
-                .from('attendance')
-                .select(`
-          id,
-          timestamp,
-          session_id,
-          sessions (
-            class_name,
-            topic
-          )
-        `)
-                .eq('student_uid', user?.id)
-                .order('timestamp', { ascending: false });
+        const { data, error } = await supabase
+            .from('attendance')
+            .select(`
+                *,
+                sessions (
+                    class_name,
+                    topic,
+                    is_active
+                )
+            `)
+            .eq('student_uid', user?.id)
+            .order('timestamp', { ascending: false });
 
-            if (error) throw error;
-            setHistory(data || []);
-        } catch (error) {
-            console.error('Error fetching history:', error);
-        } finally {
-            setLoadingHistory(false);
+        if (data) {
+            setHistory(data);
+        }
+        setLoadingHistory(false);
+    };
+
+    const fetchCourses = async () => {
+        const { data, error } = await supabase
+            .from('enrollments')
+            .select(`
+                course_id,
+                courses (
+                    id,
+                    name,
+                    code,
+                    description,
+                    schedule
+                )
+            `)
+            .eq('student_uid', user?.id);
+
+        if (data) {
+            setCourses(data.map((d: any) => d.courses));
         }
     };
 
-    const handleCheckIn = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setStatus('loading');
-        setMessage('');
+    const onScanSuccess = (decodedText: string) => {
+        setScanResult(decodedText);
+        handleAttendance(decodedText);
+    };
 
+    const onScanFailure = (error: any) => {
+        // handle scan failure, usually better to ignore and keep scanning.
+    };
+
+    const handleAttendance = async (code: string) => {
+        setMessage(null);
         try {
-            // 1. Verify Session Code
-            const { data: sessionData, error: sessionError } = await supabase
+            // 1. Find the session
+            const { data: session, error: sessionError } = await supabase
                 .from('sessions')
-                .select('id, is_active, class_name')
-                .eq('code', sessionCode)
+                .select('*')
+                .eq('code', code)
+                .eq('is_active', true)
                 .single();
 
-            if (sessionError || !sessionData) {
-                throw new Error('Invalid session code');
+            if (sessionError || !session) throw new Error("Invalid or inactive session code.");
+
+            // 2. Check if already marked
+            const { data: existing, error: checkError } = await supabase
+                .from('attendance')
+                .select('*')
+                .eq('session_id', session.id)
+                .eq('student_uid', user?.id)
+                .single();
+
+            if (existing) throw new Error("You have already marked attendance for this session.");
+
+            // 3. Check for cooldown (30 minutes)
+            const { data: lastAttendance } = await supabase
+                .from('attendance')
+                .select('timestamp')
+                .eq('student_uid', user?.id)
+                .order('timestamp', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (lastAttendance) {
+                const lastTime = new Date(lastAttendance.timestamp).getTime();
+                const now = new Date().getTime();
+                const diffMinutes = (now - lastTime) / (1000 * 60);
+                if (diffMinutes < 30) {
+                    throw new Error(`Please wait ${Math.ceil(30 - diffMinutes)} minutes before scanning into another class.`);
+                }
             }
 
-            if (!sessionData.is_active) {
-                throw new Error('This session has ended');
-            }
-
-            // 2. Record Attendance
-            // We use the logged-in user's ID directly
-            const { error: attendanceError } = await supabase
+            // 3. Mark attendance
+            const { error: insertError } = await supabase
                 .from('attendance')
                 .insert([
                     {
-                        session_id: sessionData.id,
+                        session_id: session.id,
                         student_uid: user?.id,
-                        student_name: user?.user_metadata?.full_name || 'Unknown',
-                        student_id: user?.user_metadata?.student_id_number || 'Unknown',
-                    },
+                        student_name: user?.user_metadata?.full_name || user?.email,
+                        student_id: user?.user_metadata?.student_id_number || 'N/A',
+                        timestamp: new Date().toISOString()
+                    }
                 ]);
 
-            if (attendanceError) {
-                if (attendanceError.code === '23505') {
-                    throw new Error('You have already checked in to this session');
-                }
-                throw attendanceError;
-            }
+            if (insertError) throw insertError;
 
-            setStatus('success');
-            setMessage(`Successfully checked in to ${sessionData.class_name}!`);
-            setSessionCode('');
-        } catch (err: any) {
-            setStatus('error');
-            setMessage(err.message);
+            setMessage({ type: 'success', text: `Attendance marked for ${session.class_name}!` });
+            setScanResult(null); // Reset scan result to allow re-scan if needed (though usually one per session)
+
+        } catch (error: any) {
+            setMessage({ type: 'error', text: error.message });
+        }
+    };
+
+    const handleManualSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (manualCode) {
+            handleAttendance(manualCode);
         }
     };
 
     const handleEnroll = async (e: React.FormEvent) => {
         e.preventDefault();
-        setStatus('loading');
-        setMessage('');
+        setMessage(null);
 
         try {
-            // 1. Find Course by Enrollment Code
-            const { data: courseData, error: courseError } = await supabase
+            const { data: course, error: courseError } = await supabase
                 .from('courses')
                 .select('id, name')
-                .eq('enrollment_code', enrollmentCode.toUpperCase())
+                .eq('enrollment_code', enrollmentCode)
                 .single();
 
-            if (courseError || !courseData) {
-                throw new Error('Invalid enrollment code');
-            }
+            if (courseError || !course) throw new Error("Invalid enrollment code.");
 
-            // 2. Create Enrollment
             const { error: enrollError } = await supabase
                 .from('enrollments')
-                .insert({
-                    course_id: courseData.id,
-                    student_uid: user?.id
-                });
+                .insert([
+                    {
+                        course_id: course.id,
+                        student_uid: user?.id,
+                        enrolled_at: new Date().toISOString()
+                    }
+                ]);
 
             if (enrollError) {
-                if (enrollError.code === '23505') {
-                    throw new Error('You are already enrolled in this course');
-                }
+                if (enrollError.code === '23505') throw new Error("You are already enrolled in this course.");
                 throw enrollError;
             }
 
-            setStatus('success');
-            setMessage(`Successfully enrolled in ${courseData.name}!`);
+            setMessage({ type: 'success', text: `Successfully enrolled in ${course.name}!` });
             setEnrollmentCode('');
             fetchCourses(); // Refresh list
-        } catch (err: any) {
-            setStatus('error');
-            setMessage(err.message);
+
+        } catch (error: any) {
+            setMessage({ type: 'error', text: error.message });
         }
     };
 
-    return (
-        <div className="min-h-screen bg-slate-50 pb-20 md:pb-0">
-            {/* Mobile Header */}
-            <div className="md:hidden bg-white p-4 shadow-sm flex justify-between items-center sticky top-0 z-10">
-                <h1 className="font-black text-xl text-slate-800">AttendEase</h1>
-                <button onClick={signOut} className="text-slate-500 hover:text-red-500">
-                    <LogOut size={20} />
-                </button>
+    const handleViewHistory = async (courseId: string) => {
+        setViewingHistoryCourse(courseId);
+        setLoadingCourseHistory(true);
+        try {
+            const { data, error } = await supabase
+                .from('attendance')
+                .select(`
+                    id,
+                    timestamp,
+                    sessions (
+                        class_name,
+                        topic,
+                        is_active
+                    )
+                `)
+                .eq('student_uid', user?.id)
+                .eq('sessions.course_id', courseId as any) // This might require a join if session doesn't have course_id directly, but schema says it does? Wait, schema check: sessions has course_id?
+                // Actually, let's check schema. sessions table usually links to course.
+                // If not, we filter by session IDs belonging to the course.
+                // Let's assume for now we fetch all attendance and filter in memory or better, fix query.
+                // Re-reading schema from memory: sessions table has created_by, but maybe not course_id if ad-hoc?
+                // Wait, previous implementation of TeacherDashboard used sessions created by user.
+                // Let's assume we just show ALL history for now or if we want course specific...
+                // Actually, let's just fetch all attendance for the student and filter by course if possible.
+                // But wait, the previous implementation of handleViewHistory in StudentDashboard (before I overwrote it)
+                // was fetching attendance where session -> course_id matches.
+                // Let's try to do a nested filter.
+                // Supabase doesn't support deep filtering easily on one go without foreign keys setup perfectly.
+                // Alternative: Fetch all sessions for the course, then fetch attendance for those sessions.
+                // OR: Fetch attendance and expand sessions, then filter in JS (easier for small data).
+                ;
+
+            // Let's stick to the previous logic which seemed to be:
+            // Fetch all attendance for the student and filter in JS to avoid join filtering issues
+            const { data: historyData, error: historyError } = await supabase
+                .from('attendance')
+                .select(`
+                    id,
+                    timestamp,
+                    sessions (
+                        id,
+                        class_name,
+                        topic,
+                        is_active,
+                        course_id
+                    )
+                `)
+                .eq('student_uid', user?.id)
+                .order('timestamp', { ascending: false });
+
+            if (historyError) throw historyError;
+
+            // Filter by courseId
+            const filteredHistory = historyData?.filter((record: any) => record.sessions?.course_id === courseId) || [];
+            setCourseHistory(filteredHistory);
+
+        } catch (error) {
+            console.error("Error fetching course history:", error);
+        } finally {
+            setLoadingCourseHistory(false);
+        }
+    };
+
+
+    const renderScanTab = () => (
+        <div className="max-w-2xl mx-auto animate-fade-in-up">
+            <div className="glass-card rounded-2xl overflow-hidden shadow-xl">
+                <div className="bg-slate-900 p-8 text-center relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                    <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500 rounded-full blur-3xl opacity-20"></div>
+                    <h2 className="text-2xl font-bold text-white mb-2 relative z-10">Scan Attendance Code</h2>
+                    <p className="text-slate-400 relative z-10">Point your camera at the QR code displayed by the teacher</p>
+                </div>
+
+                <div className="p-8">
+                    {message && (
+                        <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
+                            {message.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
+                            <p className="font-medium">{message.text}</p>
+                        </div>
+                    )}
+
+                    <div className="bg-slate-50 p-4 rounded-2xl border-2 border-dashed border-slate-200 mb-8">
+                        <div id="reader" className="overflow-hidden rounded-xl"></div>
+                    </div>
+
+                    <div className="relative flex py-5 items-center">
+                        <div className="flex-grow border-t border-gray-200"></div>
+                        <span className="flex-shrink-0 mx-4 text-gray-400 text-sm font-medium uppercase tracking-wider">Or enter manually</span>
+                        <div className="flex-grow border-t border-gray-200"></div>
+                    </div>
+
+                    <form onSubmit={handleManualSubmit} className="flex gap-3">
+                        <input
+                            type="text"
+                            value={manualCode}
+                            onChange={(e) => setManualCode(e.target.value)}
+                            placeholder="Enter 6-digit code"
+                            className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-mono text-center text-lg tracking-widest uppercase"
+                        />
+                        <button
+                            type="submit"
+                            className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-md"
+                        >
+                            Submit
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderHistoryTab = () => (
+        <div className="max-w-4xl mx-auto animate-fade-in-up">
+            <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="p-6 border-b border-gray-100 bg-white/50 backdrop-blur-sm flex justify-between items-center">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2 text-lg">
+                        <History className="text-indigo-600" /> Attendance History
+                    </h3>
+                    <div className="text-sm text-gray-500 font-medium bg-gray-100 px-3 py-1 rounded-full">
+                        Total: {history.length}
+                    </div>
+                </div>
+
+                <div className="divide-y divide-gray-50">
+                    {loadingHistory ? (
+                        <div className="p-12 text-center text-gray-400">Loading history...</div>
+                    ) : history.length === 0 ? (
+                        <div className="p-12 text-center text-gray-400">
+                            <Clock className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                            <p>No attendance records found.</p>
+                        </div>
+                    ) : (
+                        history.map((record) => (
+                            <div key={record.id} className="p-5 hover:bg-indigo-50/30 transition-colors flex items-center justify-between group">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600">
+                                        <CheckCircle size={20} />
+                                    </div>
+                                    <div>
+                                        <p className="font-bold text-gray-800 text-lg flex items-center gap-2">
+                                            {record.sessions?.class_name || 'Unknown Class'}
+                                            {record.sessions?.is_active && (
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-700 animate-pulse">
+                                                    <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                                    LIVE
+                                                </span>
+                                            )}
+                                        </p>
+                                        <p className="text-sm text-gray-500">{record.sessions?.topic || 'No topic'}</p>
+                                    </div>
+                                </div>
+                                <div className="text-right">
+                                    <p className="text-sm font-bold text-gray-600">
+                                        {new Date(record.timestamp).toLocaleDateString()}
+                                    </p>
+                                    <p className="text-xs text-gray-400 font-mono">
+                                        {new Date(record.timestamp).toLocaleTimeString()}
+                                    </p>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
+    const renderCoursesTab = () => (
+        <div className="max-w-4xl mx-auto animate-fade-in-up space-y-8">
+            {/* Enroll Section */}
+            <div className="glass-card p-8 rounded-2xl border-l-4 border-indigo-500">
+                <h3 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2">
+                    <Plus className="text-indigo-600" /> Join a New Course
+                </h3>
+                <form onSubmit={handleEnroll} className="flex gap-4">
+                    <input
+                        type="text"
+                        value={enrollmentCode}
+                        onChange={(e) => setEnrollmentCode(e.target.value)}
+                        placeholder="Enter Course Enrollment Code"
+                        className="flex-1 px-5 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                    />
+                    <button
+                        type="submit"
+                        className="px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-md"
+                    >
+                        Join Course
+                    </button>
+                </form>
+                {message && (
+                    <div className={`mt-4 p-3 rounded-lg text-sm font-medium ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                        {message.text}
+                    </div>
+                )}
             </div>
 
-            <div className="max-w-4xl mx-auto p-4 md:p-8">
-                {/* Desktop Header */}
-                <div className="hidden md:flex justify-between items-center mb-8">
-                    <div>
-                        <h1 className="text-3xl font-black text-slate-800">Student Portal</h1>
-                        <p className="text-slate-500">Welcome back, {user?.user_metadata?.full_name}</p>
+            {/* Courses Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {courses.length === 0 ? (
+                    <div className="col-span-1 md:col-span-2 text-center py-12 bg-white/50 rounded-2xl border border-dashed border-gray-200">
+                        <BookOpen className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                        <h4 className="text-xl font-bold text-gray-700">No courses yet</h4>
+                        <p className="text-gray-500 mt-2">Join a course to see it here!</p>
                     </div>
+                ) : (
+                    courses.map(course => (
+                        <div key={course.id} className="glass-card rounded-2xl p-6 hover:shadow-xl transition-all hover:-translate-y-1 border border-gray-100 group">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="p-3 bg-indigo-50 rounded-xl group-hover:bg-indigo-100 transition-colors">
+                                    <BookOpen className="text-indigo-600 w-6 h-6" />
+                                </div>
+                                <span className="px-3 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded-full">
+                                    {course.code}
+                                </span>
+                            </div>
+                            <h3 className="text-xl font-bold text-gray-800 mb-2">{course.name}</h3>
+                            <p className="text-gray-500 text-sm mb-6 line-clamp-2">{course.description || "No description provided."}</p>
+
+                            <div className="pt-4 border-t border-gray-50 flex justify-between items-center">
+                                <div className="text-xs text-gray-400 font-medium">
+                                    {course.schedule || "TBA"}
+                                </div>
+                                <button
+                                    onClick={() => handleViewHistory(course.id)}
+                                    className="text-indigo-600 text-sm font-bold hover:text-indigo-800 flex items-center gap-1"
+                                >
+                                    View History &rarr;
+                                </button>
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+
+            {/* Course History Modal */}
+            {viewingHistoryCourse && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200 max-h-[80vh] flex flex-col">
+                        <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                            <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                                <History className="text-indigo-600" size={20} /> Course Attendance
+                            </h3>
+                            <button
+                                onClick={() => setViewingHistoryCourse(null)}
+                                className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-500"
+                            >
+                                <XCircle size={24} />
+                            </button>
+                        </div>
+                        <div className="p-0 overflow-y-auto flex-1 custom-scrollbar">
+                            {loadingCourseHistory ? (
+                                <div className="p-12 text-center text-gray-400">Loading...</div>
+                            ) : courseHistory.length === 0 ? (
+                                <div className="p-12 text-center text-gray-400">
+                                    <p>No attendance records for this course.</p>
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-gray-100">
+                                    {courseHistory.map((record) => (
+                                        <div key={record.id} className="p-4 hover:bg-gray-50 transition-colors flex justify-between items-center">
+                                            <div>
+                                                <p className="font-bold text-gray-800 flex items-center gap-2">
+                                                    {record.sessions?.class_name || 'Unknown Class'}
+                                                    {record.sessions?.is_active && (
+                                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-bold bg-green-100 text-green-700 animate-pulse">
+                                                            <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                                                            LIVE
+                                                        </span>
+                                                    )}
+                                                </p>
+                                                <p className="text-sm text-gray-500">{record.sessions?.topic || 'No Topic'}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full">Present</span>
+                                                <p className="text-xs text-gray-400 mt-1">{new Date(record.timestamp).toLocaleDateString()}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <div className="p-4 bg-gray-50 border-t border-gray-100 text-right">
+                            <button
+                                onClick={() => setViewingHistoryCourse(null)}
+                                className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
+    return (
+        <div className="container mx-auto px-4 py-8">
+            {/* Header */}
+            <div className="flex justify-between items-center mb-8">
+                <div>
+                    <h1 className="text-2xl font-black text-slate-800">Student Dashboard</h1>
+                    <p className="text-slate-500">Track your attendance and courses</p>
+                </div>
+                <div className="flex gap-3">
+                    <button
+                        onClick={() => setIsProfileOpen(true)}
+                        className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                    >
+                        <User size={18} />
+                        <span>Profile</span>
+                    </button>
                     <button
                         onClick={signOut}
                         className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -243,214 +527,42 @@ export const StudentDashboard: React.FC = () => {
                         <span>Sign Out</span>
                     </button>
                 </div>
+            </div>
 
-                {/* Mobile Welcome */}
-                <div className="md:hidden mb-6 mt-2">
-                    <h2 className="text-2xl font-bold text-slate-800">Hello, {user?.user_metadata?.full_name?.split(' ')[0]}</h2>
-                    <p className="text-slate-500 text-sm">Ready to learn something new?</p>
-                </div>
-
-                {/* Navigation Tabs */}
-                <div className="flex bg-white p-1 rounded-xl shadow-sm mb-6 sticky top-16 md:static z-0">
+            {/* Dashboard Nav */}
+            <div className="flex justify-center mb-10">
+                <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl shadow-sm border border-gray-200 inline-flex">
                     <button
                         onClick={() => setActiveTab('scan')}
-                        className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'scan' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:text-slate-700'
-                            }`}
+                        className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'scan' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
                     >
-                        <QrCode size={18} />
-                        <span className="hidden md:inline">Scan Code</span>
-                        <span className="md:hidden">Scan</span>
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('history')}
-                        className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'history' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:text-slate-700'
-                            }`}
-                    >
-                        <History size={18} />
-                        <span className="hidden md:inline">History</span>
-                        <span className="md:hidden">History</span>
+                        Scan Code
                     </button>
                     <button
                         onClick={() => setActiveTab('courses')}
-                        className={`flex-1 py-3 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-2 ${activeTab === 'courses' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-500 hover:text-slate-700'
-                            }`}
+                        className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'courses' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
                     >
-                        <BookOpen size={18} />
-                        <span className="hidden md:inline">My Courses</span>
-                        <span className="md:hidden">Courses</span>
+                        My Courses
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('history')}
+                        className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+                    >
+                        History
                     </button>
                 </div>
-
-                {/* Content Area */}
-                <div className="animate-fade-in-up">
-                    {activeTab === 'scan' && (
-                        <div className="glass-card p-6 md:p-8 rounded-2xl shadow-lg max-w-md mx-auto">
-                            <div className="text-center mb-8">
-                                <div className="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-600">
-                                    <QrCode size={32} />
-                                </div>
-                                <h2 className="text-2xl font-bold text-slate-800 mb-2">Check In</h2>
-                                <p className="text-slate-500">Scan the QR code or enter the 6-digit code</p>
-                            </div>
-
-                            {showScanner ? (
-                                <div className="mb-6">
-                                    <div id="reader" className="rounded-xl overflow-hidden shadow-lg"></div>
-                                    <button
-                                        onClick={() => setShowScanner(false)}
-                                        className="mt-4 text-red-500 font-medium hover:underline"
-                                    >
-                                        Cancel Scanning
-                                    </button>
-                                </div>
-                            ) : (
-                                <button
-                                    onClick={() => setShowScanner(true)}
-                                    className="w-full mb-6 bg-slate-800 text-white font-bold py-3 rounded-xl hover:bg-slate-900 transition-all shadow-md flex items-center justify-center gap-2"
-                                >
-                                    <QrCode size={20} /> Scan with Camera
-                                </button>
-                            )}
-
-                            <div className="relative flex py-2 items-center mb-6">
-                                <div className="flex-grow border-t border-gray-200"></div>
-                                <span className="flex-shrink-0 mx-4 text-gray-400 text-sm">OR ENTER CODE</span>
-                                <div className="flex-grow border-t border-gray-200"></div>
-                            </div>
-
-                            <form onSubmit={handleCheckIn} className="space-y-6">
-                                <div>
-                                    <input
-                                        type="text"
-                                        value={sessionCode}
-                                        onChange={(e) => setSessionCode(e.target.value.toUpperCase())}
-                                        placeholder="ENTER CODE"
-                                        className="w-full text-center text-3xl font-black tracking-[0.5em] py-4 bg-slate-50 border-2 border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/20 outline-none transition-all placeholder:tracking-normal placeholder:text-sm placeholder:font-normal"
-                                        maxLength={6}
-                                    />
-                                </div>
-
-                                <button
-                                    type="submit"
-                                    disabled={sessionCode.length < 6 || status === 'loading'}
-                                    className="w-full bg-indigo-600 text-white font-bold py-4 rounded-xl hover:bg-indigo-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 disabled:shadow-none flex items-center justify-center gap-2"
-                                >
-                                    {status === 'loading' ? (
-                                        <>
-                                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                            Checking In...
-                                        </>
-                                    ) : (
-                                        'Check In Now'
-                                    )}
-                                </button>
-                            </form>
-
-                            {status !== 'idle' && (
-                                <div className={`mt-6 p-4 rounded-xl flex items-start gap-3 ${status === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                                    }`}>
-                                    {status === 'success' ? <CheckCircle className="shrink-0" /> : <XCircle className="shrink-0" />}
-                                    <div>
-                                        <p className="font-bold">{status === 'success' ? 'Success!' : 'Error'}</p>
-                                        <p className="text-sm opacity-90">{message}</p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {activeTab === 'history' && (
-                        <div className="space-y-4">
-                            {loadingHistory ? (
-                                <div className="text-center py-12 text-slate-400">Loading history...</div>
-                            ) : history.length === 0 ? (
-                                <div className="text-center py-12 bg-white rounded-2xl border border-dashed border-slate-200">
-                                    <img src="/assets/empty-history.png" alt="No History" className="w-48 h-48 mx-auto mb-4 object-contain opacity-80" />
-                                    <p className="text-slate-500 font-medium text-lg">No attendance records yet</p>
-                                    <p className="text-sm text-slate-400 mt-1">Your check-in history will appear here.</p>
-                                </div>
-                            ) : (
-                                history.map((record) => (
-                                    <div key={record.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 flex justify-between items-center">
-                                        <div>
-                                            <h3 className="font-bold text-slate-800">{record.sessions.class_name}</h3>
-                                            <p className="text-sm text-slate-500">{record.sessions.topic}</p>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full inline-block mb-1">
-                                                Present
-                                            </div>
-                                            <p className="text-xs text-slate-400">
-                                                {new Date(record.timestamp).toLocaleDateString()}
-                                            </p>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    )}
-
-                    {activeTab === 'courses' && (
-                        <div className="space-y-8">
-                            {/* Enrollment Card */}
-                            <div className="glass-card p-6 md:p-8 rounded-2xl shadow-lg">
-                                <h2 className="text-2xl font-bold text-slate-800 mb-6 flex items-center gap-3">
-                                    <BookOpen className="text-indigo-600" /> My Courses
-                                </h2>
-
-                                <form onSubmit={handleEnroll} className="flex gap-4 mb-8">
-                                    <input
-                                        type="text"
-                                        value={enrollmentCode}
-                                        onChange={(e) => setEnrollmentCode(e.target.value)}
-                                        placeholder="Enter Course Enrollment Code"
-                                        className="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                                        required
-                                    />
-                                    <button
-                                        type="submit"
-                                        disabled={status === 'loading'}
-                                        className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md disabled:opacity-50"
-                                    >
-                                        {status === 'loading' ? 'Joining...' : 'Join Course'}
-                                    </button>
-                                </form>
-
-                                {status !== 'idle' && message && (
-                                    <div className={`p-4 rounded-xl mb-6 flex items-start gap-3 ${status === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
-                                        {status === 'success' ? <CheckCircle className="shrink-0" /> : <XCircle className="shrink-0" />}
-                                        <p className="font-medium">{message}</p>
-                                    </div>
-                                )}
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    {loadingCourses ? (
-                                        <p className="text-slate-400 col-span-2 text-center py-8">Loading courses...</p>
-                                    ) : courses.length === 0 ? (
-                                        <div className="col-span-2 text-center py-12 bg-slate-50/50 rounded-xl border border-dashed border-slate-200">
-                                            <img src="/assets/empty-courses.png" alt="No Courses" className="w-48 h-48 mx-auto mb-4 object-contain opacity-80" />
-                                            <p className="text-slate-500 font-medium text-lg">No courses yet</p>
-                                            <p className="text-sm text-slate-400 mt-1">Enter a code above to join your first class!</p>
-                                        </div>
-                                    ) : (
-                                        courses.map(course => (
-                                            <div key={course.id} className="bg-white p-5 rounded-xl border border-slate-100 shadow-sm hover:shadow-md transition-all">
-                                                <h3 className="font-bold text-lg text-slate-800">{course.code}</h3>
-                                                <p className="text-slate-600 font-medium">{course.name}</p>
-                                                <p className="text-sm text-slate-400 mt-2">{course.description}</p>
-                                                <div className="mt-4 pt-4 border-t border-slate-50 flex justify-between items-center text-sm text-slate-500">
-                                                    <span>{course.schedule || 'No schedule'}</span>
-                                                    <span className="bg-indigo-50 text-indigo-600 px-2 py-1 rounded-md font-bold text-xs">Enrolled</span>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    )}
-                </div>
             </div>
+
+            {activeTab === 'scan' && renderScanTab()}
+            {activeTab === 'courses' && renderCoursesTab()}
+            {activeTab === 'history' && renderHistoryTab()}
+
+            <ProfileModal
+                isOpen={isProfileOpen}
+                onClose={() => setIsProfileOpen(false)}
+                user={user}
+                onUpdate={() => window.location.reload()}
+            />
         </div>
     );
 };

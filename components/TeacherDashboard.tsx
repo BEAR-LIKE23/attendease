@@ -2,8 +2,14 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Users, QrCode, BarChart3, Clock,
   CheckCircle, RefreshCw, XCircle, BrainCircuit, Download,
-  Calendar, Search, Filter, BookOpen, Copy
+  Calendar, Search, Filter, BookOpen, Copy, User, LogOut
 } from 'lucide-react';
+import { ProfileModal } from './ProfileModal';
+import { StudentListModal } from './teacher/StudentListModal';
+import { CourseCard } from './teacher/CourseCard';
+import { CreateCourseForm } from './teacher/CreateCourseForm';
+import { CreateSessionForm } from './teacher/CreateSessionForm';
+import { SessionList } from './teacher/SessionList';
 import { ClassSession, AttendanceRecord, Course } from '../types';
 import { generateAttendanceReport } from '../services/geminiService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -19,19 +25,18 @@ interface TeacherDashboardProps {
 }
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'create' | 'live' | 'history' | 'courses'>('courses');
-  const [newClassName, setNewClassName] = useState('');
-  const [newClassTopic, setNewClassTopic] = useState('');
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [report, setReport] = useState<{ summary: string; insights: string[] } | null>(null);
   const [loadingReport, setLoadingReport] = useState(false);
   const [viewingCourse, setViewingCourse] = useState<Course | null>(null);
   const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
   const [loadingStudents, setLoadingStudents] = useState(false);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const activeSession = sessions.find(s => s.isActive);
 
@@ -142,9 +147,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     }
   }, [activeSession]);
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newClassName && newClassTopic && user) {
+  const handleCreate = async (courseId: string, name: string, topic: string) => {
+    if (name && topic && user) {
       // Generate a simple 6-character code (e.g., 9X2B1A)
       const code = Math.random().toString(36).substring(2, 8).toUpperCase();
 
@@ -152,8 +156,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
         .from('sessions')
         .insert({
           created_by: user.id,
-          class_name: newClassName,
-          topic: newClassTopic,
+          course_id: courseId,
+          class_name: name,
+          topic: topic,
           code: code,
           is_active: true
         })
@@ -170,8 +175,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
           createdAt: data.created_at
         };
         setSessions(prev => [newSession, ...prev]);
-        setNewClassName('');
-        setNewClassTopic('');
       } else {
         console.error("Error creating session:", error);
         alert("Failed to create session. Please try again.");
@@ -179,8 +182,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     }
   };
 
-  const handleCreateCourse = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreateCourse = async (name: string, code: string) => {
     if (!user) return;
 
     // Generate a random 6-char enrollment code
@@ -190,8 +192,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
       .from('courses')
       .insert({
         created_by: user.id,
-        name: newClassName,
-        code: newClassTopic, // Using topic input as Course Code (e.g. CS101)
+        name: name,
+        code: code,
         enrollment_code: enrollmentCode,
         description: 'Created via dashboard',
       })
@@ -209,8 +211,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
         createdAt: data.created_at
       };
       setCourses(prev => [newCourse, ...prev]);
-      setNewClassName('');
-      setNewClassTopic('');
       alert(`Course Created! Enrollment Code: ${enrollmentCode}`);
     } else {
       console.error("Error creating course:", error);
@@ -333,47 +333,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
           </div>
         </div>
       ) : (
-        <div className="glass-card rounded-2xl overflow-hidden">
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 p-8 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-white opacity-10 rounded-full -mr-16 -mt-16 blur-2xl"></div>
-            <h2 className="text-3xl font-bold text-white flex items-center gap-3 relative z-10">
-              <Plus className="w-8 h-8" /> Start New Session
-            </h2>
-            <p className="text-indigo-100 mt-2 relative z-10 text-lg">Generate a secure QR code for your class instantly.</p>
-          </div>
-          <div className="p-10">
-            <form onSubmit={handleCreate} className="space-y-8">
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700 uppercase tracking-wider">Class Name</label>
-                <input
-                  type="text"
-                  value={newClassName}
-                  onChange={(e) => setNewClassName(e.target.value)}
-                  className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-lg"
-                  placeholder="e.g. CS101: Intro to Computer Science"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="block text-sm font-semibold text-gray-700 uppercase tracking-wider">Topic / Subject</label>
-                <input
-                  type="text"
-                  value={newClassTopic}
-                  onChange={(e) => setNewClassTopic(e.target.value)}
-                  className="w-full px-5 py-4 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all text-lg"
-                  placeholder="e.g. Week 4: React Hooks & State"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold py-4 rounded-xl hover:shadow-lg hover:scale-[1.01] transition-all duration-200 shadow-md active:scale-[0.99] text-lg"
-              >
-                Generate QR Code & Start Class
-              </button>
-            </form>
-          </div>
-        </div>
+        <CreateSessionForm courses={courses} onSubmit={handleCreate} />
       )}
     </div>
   );
@@ -505,44 +465,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
 
   const renderCoursesTab = () => (
     <div className="max-w-4xl mx-auto animate-fade-in-up space-y-8">
-      {/* Create Course Card */}
-      <div className="glass-card p-8 rounded-2xl">
-        <h3 className="text-2xl font-bold text-gray-800 mb-6 flex items-center gap-3">
-          <BookOpen className="text-indigo-600" /> Create New Course
-        </h3>
-        <form onSubmit={handleCreateCourse} className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="md:col-span-1">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Course Code</label>
-            <input
-              type="text"
-              value={newClassTopic} // Reusing state
-              onChange={(e) => setNewClassTopic(e.target.value)}
-              placeholder="e.g. CS101"
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-              required
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-sm font-semibold text-gray-700 mb-2">Course Name</label>
-            <div className="flex gap-4">
-              <input
-                type="text"
-                value={newClassName} // Reusing state
-                onChange={(e) => setNewClassName(e.target.value)}
-                placeholder="e.g. Intro to Computer Science"
-                className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
-                required
-              />
-              <button
-                type="submit"
-                className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
+      <CreateCourseForm onSubmit={handleCreateCourse} />
 
       {/* Courses List */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -554,41 +477,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
           </div>
         ) : (
           courses.map(course => (
-            <div key={course.id} className="glass-card p-6 rounded-2xl border-l-4 border-indigo-500 hover:shadow-lg transition-all">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <h4 className="text-xl font-bold text-gray-800">{course.code}</h4>
-                  <p className="text-gray-600">{course.name}</p>
-                </div>
-                <div className="bg-indigo-50 px-3 py-1 rounded-lg border border-indigo-100">
-                  <p className="text-xs text-indigo-600 font-bold uppercase tracking-wider mb-1">Enrollment Code</p>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-lg font-black text-indigo-900">{course.enrollmentCode}</span>
-                    <button
-                      onClick={() => navigator.clipboard.writeText(course.enrollmentCode)}
-                      className="text-indigo-400 hover:text-indigo-600"
-                      title="Copy Code"
-                    >
-                      <Copy size={16} />
-                    </button>
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center gap-4 text-sm text-gray-500 border-t border-gray-100 pt-4">
-                <span className="flex items-center gap-1">
-                  <Calendar size={14} /> {new Date(course.createdAt).toLocaleDateString()}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Users size={14} /> {course.studentCount || 0} Students
-                </span>
-                <button
-                  onClick={() => handleViewStudents(course)}
-                  className="text-indigo-600 hover:text-indigo-800 text-xs font-bold hover:underline"
-                >
-                  View Students
-                </button>
-              </div>
-            </div>
+            <CourseCard
+              key={course.id}
+              course={course}
+              onViewStudents={handleViewStudents}
+            />
           ))
         )}
       </div>
@@ -632,37 +525,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
             </div>
           </div>
 
-          <div className="glass-card p-8 rounded-2xl flex flex-col h-[450px]">
-            <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <Calendar className="text-purple-600" size={24} /> Past Sessions
-            </h3>
-            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-              {sessions.filter(s => !s.isActive).length === 0 ? (
-                <div className="text-center py-10">
-                  <img src="/assets/empty-history.png" alt="No History" className="w-32 h-32 mx-auto mb-3 object-contain opacity-60" />
-                  <p className="text-gray-400">No past sessions yet.</p>
-                </div>
-              ) : (
-                sessions.filter(s => !s.isActive).map(session => (
-                  <div
-                    key={session.id}
-                    onClick={() => setSelectedSession(session)}
-                    className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 ${selectedSession?.id === session.id ? 'border-indigo-500 bg-indigo-50/50 ring-1 ring-indigo-500 shadow-sm' : 'border-gray-100 hover:border-indigo-200 hover:bg-gray-50'}`}
-                  >
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <p className="font-bold text-gray-800">{session.className}</p>
-                        <p className="text-sm text-gray-500 mt-0.5">{session.topic}</p>
-                      </div>
-                      <span className="text-xs bg-gray-100 px-2.5 py-1 rounded-md text-gray-600 font-medium">
-                        {new Date(session.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <SessionList
+            sessions={sessions}
+            onSelectSession={setSelectedSession}
+            selectedSessionId={selectedSession?.id}
+          />
         </div>
 
         {/* AI Analysis Section */}
@@ -736,6 +603,30 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
 
   return (
     <div className="container mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-2xl font-black text-slate-800">Teacher Dashboard</h1>
+          <p className="text-slate-500">Manage your courses and sessions</p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setIsProfileOpen(true)}
+            className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+          >
+            <User size={18} />
+            <span>Profile</span>
+          </button>
+          <button
+            onClick={signOut}
+            className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            <LogOut size={18} />
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </div>
+
       {/* Dashboard Nav */}
       <div className="flex justify-center mb-10">
         <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl shadow-sm border border-gray-200 inline-flex">
@@ -772,66 +663,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
       {activeTab === 'history' && renderHistoryTab()}
 
       {/* Students Modal */}
-      {viewingCourse && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
-            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
-              <div>
-                <h3 className="text-xl font-bold text-gray-800">{viewingCourse.name}</h3>
-                <p className="text-sm text-gray-500">Enrolled Students</p>
-              </div>
-              <button
-                onClick={() => setViewingCourse(null)}
-                className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-500"
-              >
-                <XCircle size={24} />
-              </button>
-            </div>
-            <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
-              {loadingStudents ? (
-                <div className="p-12 text-center text-gray-400">
-                  <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-2"></div>
-                  Loading students...
-                </div>
-              ) : enrolledStudents.length === 0 ? (
-                <div className="p-12 text-center text-gray-400">
-                  <Users className="w-12 h-12 mx-auto mb-3 opacity-20" />
-                  <p>No students enrolled yet.</p>
-                </div>
-              ) : (
-                <table className="w-full text-left border-collapse">
-                  <thead className="bg-gray-50 sticky top-0">
-                    <tr>
-                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Name</th>
-                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
-                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Email</th>
-                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Joined</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {enrolledStudents.map((student, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                        <td className="p-4 font-medium text-gray-900">{student.name}</td>
-                        <td className="p-4 text-gray-600 font-mono text-sm">{student.studentId}</td>
-                        <td className="p-4 text-gray-600 text-sm">{student.email}</td>
-                        <td className="p-4 text-gray-500 text-sm">{new Date(student.enrolledAt).toLocaleDateString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-            </div>
-            <div className="p-4 bg-gray-50 border-t border-gray-100 text-right">
-              <button
-                onClick={() => setViewingCourse(null)}
-                className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <StudentListModal
+        isOpen={!!viewingCourse}
+        onClose={() => setViewingCourse(null)}
+        course={viewingCourse}
+        students={enrolledStudents}
+        loading={loadingStudents}
+      />
+
+      {/* Profile Modal */}
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        user={user}
+        onUpdate={() => window.location.reload()}
+      />
     </div>
   );
 };
