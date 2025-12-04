@@ -20,6 +20,7 @@ export interface Course {
   description?: string;
   schedule?: string;
   createdAt: string;
+  studentCount?: number;
 }
 
 export interface ClassSession {

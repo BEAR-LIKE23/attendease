@@ -29,6 +29,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [report, setReport] = useState<{ summary: string; insights: string[] } | null>(null);
   const [loadingReport, setLoadingReport] = useState(false);
+  const [viewingCourse, setViewingCourse] = useState<Course | null>(null);
+  const [enrolledStudents, setEnrolledStudents] = useState<any[]>([]);
+  const [loadingStudents, setLoadingStudents] = useState(false);
 
   const activeSession = sessions.find(s => s.isActive);
 
@@ -57,22 +60,23 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
         setSessions(mappedSessions);
       }
 
-      // Fetch Courses
+      // Fetch Courses with enrollment count
       const { data: coursesData } = await supabase
         .from('courses')
-        .select('*')
+        .select('*, enrollments(count)')
         .eq('created_by', user.id)
         .order('created_at', { ascending: false });
 
       if (coursesData) {
-        const mappedCourses: Course[] = coursesData.map(c => ({
+        const mappedCourses: Course[] = coursesData.map((c: any) => ({
           id: c.id,
           name: c.name,
           code: c.code,
           enrollmentCode: c.enrollment_code,
           description: c.description,
           schedule: c.schedule,
-          createdAt: c.created_at
+          createdAt: c.created_at,
+          studentCount: c.enrollments?.[0]?.count || 0
         }));
         setCourses(mappedCourses);
       }
@@ -262,6 +266,46 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleViewStudents = async (course: Course) => {
+    setViewingCourse(course);
+    setLoadingStudents(true);
+    setEnrolledStudents([]);
+
+    // Step 1: Fetch enrollments to get student UIDs
+    const { data: enrollmentData, error: enrollmentError } = await supabase
+      .from('enrollments')
+      .select('student_uid, enrolled_at')
+      .eq('course_id', course.id);
+
+    if (enrollmentData && enrollmentData.length > 0) {
+      const studentIds = enrollmentData.map(e => e.student_uid);
+
+      // Step 2: Fetch profiles for these students
+      const { data: profilesData, error: profilesError } = await supabase
+        .from('profiles')
+        .select('id, full_name, email, student_id_number')
+        .in('id', studentIds);
+
+      if (profilesData) {
+        // Merge data
+        const students = enrollmentData.map(enrollment => {
+          const profile = profilesData.find(p => p.id === enrollment.student_uid);
+          return {
+            name: profile?.full_name || 'Unknown',
+            email: profile?.email || 'No Email',
+            studentId: profile?.student_id_number || 'N/A',
+            enrolledAt: enrollment.enrolled_at
+          };
+        });
+        setEnrolledStudents(students);
+      }
+    } else if (enrollmentError) {
+      console.error("Error fetching enrollments:", enrollmentError);
+    }
+
+    setLoadingStudents(false);
   };
 
   const renderCreateTab = () => (
@@ -535,8 +579,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
                   <Calendar size={14} /> {new Date(course.createdAt).toLocaleDateString()}
                 </span>
                 <span className="flex items-center gap-1">
-                  <Users size={14} /> 0 Students {/* Placeholder for enrollment count */}
+                  <Users size={14} /> {course.studentCount || 0} Students
                 </span>
+                <button
+                  onClick={() => handleViewStudents(course)}
+                  className="text-indigo-600 hover:text-indigo-800 text-xs font-bold hover:underline"
+                >
+                  View Students
+                </button>
               </div>
             </div>
           ))
@@ -720,6 +770,68 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
       {activeTab === 'create' && renderCreateTab()}
       {activeTab === 'live' && renderLiveTab()}
       {activeTab === 'history' && renderHistoryTab()}
+
+      {/* Students Modal */}
+      {viewingCourse && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <div>
+                <h3 className="text-xl font-bold text-gray-800">{viewingCourse.name}</h3>
+                <p className="text-sm text-gray-500">Enrolled Students</p>
+              </div>
+              <button
+                onClick={() => setViewingCourse(null)}
+                className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-500"
+              >
+                <XCircle size={24} />
+              </button>
+            </div>
+            <div className="p-0 max-h-[60vh] overflow-y-auto custom-scrollbar">
+              {loadingStudents ? (
+                <div className="p-12 text-center text-gray-400">
+                  <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-2"></div>
+                  Loading students...
+                </div>
+              ) : enrolledStudents.length === 0 ? (
+                <div className="p-12 text-center text-gray-400">
+                  <Users className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                  <p>No students enrolled yet.</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-gray-50 sticky top-0">
+                    <tr>
+                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Name</th>
+                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
+                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Email</th>
+                      <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Joined</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {enrolledStudents.map((student, idx) => (
+                      <tr key={idx} className="hover:bg-gray-50 transition-colors">
+                        <td className="p-4 font-medium text-gray-900">{student.name}</td>
+                        <td className="p-4 text-gray-600 font-mono text-sm">{student.studentId}</td>
+                        <td className="p-4 text-gray-600 text-sm">{student.email}</td>
+                        <td className="p-4 text-gray-500 text-sm">{new Date(student.enrolledAt).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="p-4 bg-gray-50 border-t border-gray-100 text-right">
+              <button
+                onClick={() => setViewingCourse(null)}
+                className="px-4 py-2 bg-white border border-gray-300 rounded-lg text-gray-700 font-medium hover:bg-gray-50 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
