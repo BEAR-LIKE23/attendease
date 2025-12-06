@@ -9,13 +9,14 @@ import { useAuth } from '../contexts/AuthContext';
 import { ProfileModal } from './ProfileModal';
 import { Course, AttendanceRecord, Message, Notification } from '../types';
 import { messageService } from '../services/messageService';
+import { Toast } from './Toast';
 
 export const StudentDashboard: React.FC = () => {
     const { user, signOut } = useAuth();
     const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'courses' | 'messages'>('scan');
     const [scanResult, setScanResult] = useState<string | null>(null);
     const [manualCode, setManualCode] = useState('');
-    const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
     const [history, setHistory] = useState<AttendanceRecord[]>([]);
     const [courses, setCourses] = useState<Course[]>([]);
     const [loadingHistory, setLoadingHistory] = useState(false);
@@ -179,7 +180,7 @@ export const StudentDashboard: React.FC = () => {
     };
 
     const handleAttendance = async (code: string) => {
-        setMessage(null);
+        setToast(null);
         try {
             // 1. Find the session
             const { data: session, error: sessionError } = await supabase
@@ -234,11 +235,11 @@ export const StudentDashboard: React.FC = () => {
 
             if (insertError) throw insertError;
 
-            setMessage({ type: 'success', text: `Attendance marked for ${session.class_name}!` });
+            setToast({ type: 'success', message: `Attendance marked for ${session.class_name}!` });
             setScanResult(null); // Reset scan result to allow re-scan if needed (though usually one per session)
 
         } catch (error: any) {
-            setMessage({ type: 'error', text: error.message });
+            setToast({ type: 'error', message: error.message });
         }
     };
 
@@ -251,7 +252,7 @@ export const StudentDashboard: React.FC = () => {
 
     const handleEnroll = async (e: React.FormEvent) => {
         e.preventDefault();
-        setMessage(null);
+        setToast(null);
 
         try {
             const { data: course, error: courseError } = await supabase
@@ -277,12 +278,12 @@ export const StudentDashboard: React.FC = () => {
                 throw enrollError;
             }
 
-            setMessage({ type: 'success', text: `Successfully enrolled in ${course.name}!` });
+            setToast({ type: 'success', message: `Successfully enrolled in ${course.name}!` });
             setEnrollmentCode('');
             fetchCourses(); // Refresh list
 
         } catch (error: any) {
-            setMessage({ type: 'error', text: error.message });
+            setToast({ type: 'error', message: error.message });
         }
     };
 
@@ -361,12 +362,7 @@ export const StudentDashboard: React.FC = () => {
                 </div>
 
                 <div className="p-8">
-                    {message && (
-                        <div className={`mb-6 p-4 rounded-xl flex items-center gap-3 ${message.type === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'}`}>
-                            {message.type === 'success' ? <CheckCircle size={20} /> : <XCircle size={20} />}
-                            <p className="font-medium">{message.text}</p>
-                        </div>
-                    )}
+
 
                     <div className="bg-slate-50 p-4 rounded-2xl border-2 border-dashed border-slate-200 mb-8">
                         <div id="reader" className="overflow-hidden rounded-xl"></div>
@@ -476,11 +472,7 @@ export const StudentDashboard: React.FC = () => {
                         Join Course
                     </button>
                 </form>
-                {message && (
-                    <div className={`mt-4 p-3 rounded-lg text-sm font-medium ${message.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                        {message.text}
-                    </div>
-                )}
+
             </div>
 
             {/* Courses Grid */}
@@ -621,6 +613,13 @@ export const StudentDashboard: React.FC = () => {
 
     return (
         <div className="container mx-auto px-4 py-8">
+            {toast && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast(null)}
+                />
+            )}
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 text-center md:text-left">
                 <div>

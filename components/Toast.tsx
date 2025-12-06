@@ -30,7 +30,7 @@ export const Toast: React.FC<ToastProps> = ({ message, type, onClose, duration =
     };
 
     return (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg animate-slide-in-right ${bgColors[type]}`}>
+        <div className={`fixed top-20 right-4 z-[100] flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg animate-slide-in-right ${bgColors[type]}`}>
             {icons[type]}
             <p className="text-gray-800 font-medium text-sm">{message}</p>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
