@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Users, QrCode, BarChart3, Clock,
   CheckCircle, RefreshCw, XCircle, BrainCircuit, Download,
-  Calendar, Search, Filter, BookOpen, Copy, User, LogOut, MessageSquare, Send
+  Calendar, Search, Filter, BookOpen, Copy, User, LogOut, MessageSquare, Send, History
 } from 'lucide-react';
 import { ProfileModal } from './ProfileModal';
 import { StudentListModal } from './teacher/StudentListModal';
@@ -602,7 +602,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     );
   };
 
-  const renderMessagesTab = () => {
+  const MessagesTab: React.FC<{ courses: Course[], user: any }> = ({ courses, user }) => {
+    const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+    const [title, setTitle] = useState('');
+    const [content, setContent] = useState('');
+    const [sending, setSending] = useState(false);
     const [sentMessages, setSentMessages] = useState<any[]>([]);
     const [loadingSent, setLoadingSent] = useState(false);
 
@@ -813,7 +817,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
       {activeTab === 'create' && renderCreateTab()}
       {activeTab === 'live' && renderLiveTab()}
       {activeTab === 'history' && renderHistoryTab()}
-      {activeTab === 'messages' && renderMessagesTab()}
+      {activeTab === 'messages' && <MessagesTab courses={courses} user={user} />}
 
       {/* Students Modal */}
       <StudentListModal
