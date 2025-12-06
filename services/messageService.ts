@@ -54,12 +54,36 @@ export const messageService = {
     async getCourseMessages(courseId: string) {
         const { data, error } = await supabase
             .from('messages')
-            .select('*')
+            .select(`
+                *,
+                courses (
+                    name,
+                    code
+                )
+            `)
             .eq('course_id', courseId)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
-        return data as any[]; // Type casting needed due to snake_case -> camelCase mapping if not handled globally
+        return data as unknown as Message[];
+    },
+
+    // Get messages sent by a teacher
+    async getSentMessages(senderId: string) {
+        const { data, error } = await supabase
+            .from('messages')
+            .select(`
+                *,
+                courses (
+                    name,
+                    code
+                )
+            `)
+            .eq('sender_id', senderId)
+            .order('created_at', { ascending: false });
+
+        if (error) throw error;
+        return data as unknown as Message[];
     },
 
     // Get notifications for the current user

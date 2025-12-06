@@ -603,10 +603,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
   };
 
   const renderMessagesTab = () => {
-    const [selectedCourseId, setSelectedCourseId] = useState<string>('');
-    const [title, setTitle] = useState('');
-    const [content, setContent] = useState('');
-    const [sending, setSending] = useState(false);
+    const [sentMessages, setSentMessages] = useState<any[]>([]);
+    const [loadingSent, setLoadingSent] = useState(false);
+
+    useEffect(() => {
+      fetchSentMessages();
+    }, []);
+
+    const fetchSentMessages = async () => {
+      setLoadingSent(true);
+      try {
+        const msgs = await messageService.getSentMessages(user?.id || '');
+        setSentMessages(msgs);
+      } catch (error) {
+        console.error('Error fetching sent messages:', error);
+      } finally {
+        setLoadingSent(false);
+      }
+    };
 
     const handleSendMessage = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -618,6 +632,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
         alert('Message sent successfully!');
         setTitle('');
         setContent('');
+        fetchSentMessages(); // Refresh list
       } catch (error) {
         console.error('Error sending message:', error);
         alert('Failed to send message.');
@@ -627,40 +642,42 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     };
 
     return (
-      <div className="max-w-2xl mx-auto animate-fade-in-up">
+      <div className="max-w-4xl mx-auto animate-fade-in-up space-y-8">
         <div className="glass-card p-8 rounded-2xl">
           <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
             <MessageSquare className="text-indigo-600" /> Send Announcement
           </h3>
 
           <form onSubmit={handleSendMessage} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Select Course</label>
-              <select
-                value={selectedCourseId}
-                onChange={(e) => setSelectedCourseId(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white/50"
-                required
-              >
-                <option value="">-- Select a Course --</option>
-                {courses.map(course => (
-                  <option key={course.id} value={course.id}>
-                    {course.name} ({course.code})
-                  </option>
-                ))}
-              </select>
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Select Course</label>
+                <select
+                  value={selectedCourseId}
+                  onChange={(e) => setSelectedCourseId(e.target.value)}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white/50"
+                  required
+                >
+                  <option value="">-- Select a Course --</option>
+                  {courses.map(course => (
+                    <option key={course.id} value={course.id}>
+                      {course.name} ({course.code})
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
-              <input
-                type="text"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="e.g. Midterm Exam Schedule"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white/50"
-                required
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+                <input
+                  type="text"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Midterm Exam Schedule"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white/50"
+                  required
+                />
+              </div>
             </div>
 
             <div>
@@ -669,26 +686,62 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
                 placeholder="Write your message here..."
-                rows={5}
+                rows={4}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white/50 resize-none"
                 required
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={sending || !selectedCourseId}
-              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              {sending ? (
-                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-              ) : (
-                <>
-                  <Send size={18} /> Send Announcement
-                </>
-              )}
-            </button>
+            <div className="flex justify-end">
+              <button
+                type="submit"
+                disabled={sending || !selectedCourseId}
+                className="px-8 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {sending ? (
+                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : (
+                  <>
+                    <Send size={18} /> Send Announcement
+                  </>
+                )}
+              </button>
+            </div>
           </form>
+        </div>
+
+        {/* Sent Messages History */}
+        <div className="glass-card rounded-2xl overflow-hidden">
+          <div className="p-6 border-b border-gray-100 bg-white/50 backdrop-blur-sm">
+            <h3 className="font-bold text-gray-800 flex items-center gap-2 text-lg">
+              <History className="text-indigo-600" /> Sent Announcements
+            </h3>
+          </div>
+          <div className="divide-y divide-gray-50">
+            {loadingSent ? (
+              <div className="p-12 text-center text-gray-400">Loading history...</div>
+            ) : sentMessages.length === 0 ? (
+              <div className="p-12 text-center text-gray-400">
+                <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                <p>No announcements sent yet.</p>
+              </div>
+            ) : (
+              sentMessages.map((msg) => (
+                <div key={msg.id} className="p-6 hover:bg-indigo-50/30 transition-colors">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-md">
+                      {msg.courses?.code}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      {new Date(msg.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <h4 className="text-lg font-bold text-gray-800 mb-2">{msg.title}</h4>
+                  <p className="text-gray-600 leading-relaxed whitespace-pre-wrap text-sm">{msg.content}</p>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     );

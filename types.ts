@@ -46,6 +46,10 @@ export interface Message {
   title: string;
   content: string;
   createdAt: string;
+  courses?: {
+    name: string;
+    code: string;
+  };
 }
 
 export interface Notification {

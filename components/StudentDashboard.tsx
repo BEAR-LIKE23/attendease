@@ -84,22 +84,33 @@ export const StudentDashboard: React.FC = () => {
                 if (data) {
                     const courseIds = data.map(d => d.course_id);
                     // Now fetch messages for these courses
+                    if (courseIds.length > 0) {
+                        const { data: msgs, error } = await supabase
+                            .from('messages')
+                            .select('*, courses(name, code)')
+                            .in('course_id', courseIds)
+                            .order('created_at', { ascending: false });
+
+                        if (error) throw error;
+                        if (msgs) setMessages(msgs as any);
+                    } else {
+                        setMessages([]);
+                    }
+                }
+            } else {
+                const courseIds = currentCourses.map(c => c.id);
+                if (courseIds.length > 0) {
                     const { data: msgs, error } = await supabase
                         .from('messages')
                         .select('*, courses(name, code)')
                         .in('course_id', courseIds)
                         .order('created_at', { ascending: false });
 
+                    if (error) throw error;
                     if (msgs) setMessages(msgs as any);
+                } else {
+                    setMessages([]);
                 }
-            } else {
-                const courseIds = currentCourses.map(c => c.id);
-                const { data: msgs } = await supabase
-                    .from('messages')
-                    .select('*, courses(name, code)')
-                    .in('course_id', courseIds)
-                    .order('created_at', { ascending: false });
-                if (msgs) setMessages(msgs as any);
             }
         } catch (error) {
             console.error("Error fetching messages:", error);
