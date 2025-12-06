@@ -16,6 +16,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { messageService } from '../services/messageService';
+import { Toast } from './Toast';
 
 interface TeacherDashboardProps {
   // Props are now optional as we fetch internally
@@ -602,6 +603,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     );
   };
 
+
+
+  // ... (other imports)
+
   const MessagesTab: React.FC<{ courses: Course[], user: any }> = ({ courses, user }) => {
     const [selectedCourseId, setSelectedCourseId] = useState<string>('');
     const [title, setTitle] = useState('');
@@ -609,6 +614,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     const [sending, setSending] = useState(false);
     const [sentMessages, setSentMessages] = useState<any[]>([]);
     const [loadingSent, setLoadingSent] = useState(false);
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
     useEffect(() => {
       fetchSentMessages();
@@ -633,13 +639,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
       setSending(true);
       try {
         await messageService.sendMessage(selectedCourseId, title, content);
-        alert('Message sent successfully!');
+        setToast({ message: 'Message sent successfully!', type: 'success' });
         setTitle('');
         setContent('');
         fetchSentMessages(); // Refresh list
       } catch (error) {
         console.error('Error sending message:', error);
-        alert('Failed to send message.');
+        setToast({ message: 'Failed to send message.', type: 'error' });
       } finally {
         setSending(false);
       }
@@ -647,7 +653,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
 
     return (
       <div className="max-w-4xl mx-auto animate-fade-in-up space-y-8">
+        {toast && (
+          <Toast
+            message={toast.message}
+            type={toast.type}
+            onClose={() => setToast(null)}
+          />
+        )}
         <div className="glass-card p-8 rounded-2xl">
+
           <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
             <MessageSquare className="text-indigo-600" /> Send Announcement
           </h3>
