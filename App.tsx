@@ -4,7 +4,7 @@ import { TeacherDashboard } from './components/TeacherDashboard';
 import { StudentDashboard } from './components/StudentDashboard';
 import { LoginPage } from './components/LoginPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
-import { GraduationCap, BookOpen, LogOut, CheckCircle, Users } from 'lucide-react';
+import { GraduationCap, BookOpen, LogOut, CheckCircle, Users, TrendingUp, Bell, Award } from 'lucide-react';
 
 const AppContent: React.FC = () => {
   const { user, signOut } = useAuth();
@@ -37,7 +37,7 @@ const AppContent: React.FC = () => {
             <span className="text-sm font-bold text-indigo-900 tracking-wide uppercase">Next-Gen Classroom</span>
           </div>
 
-          <h1 className="text-5xl lg:text-7xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
+          <h1 className="text-4xl md:text-5xl lg:text-7xl font-black text-slate-900 mb-6 tracking-tight leading-tight">
             Attendance <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-purple-600">Made Simple.</span>
           </h1>
@@ -98,7 +98,7 @@ const AppContent: React.FC = () => {
             />
 
             {/* Floating Badge 1 */}
-            <div className="absolute -top-8 -right-8 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob animation-delay-2000">
+            <div className="absolute -top-8 -right-8 z-20 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob animation-delay-2000">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center text-green-600">
                   <CheckCircle size={20} />
@@ -111,7 +111,7 @@ const AppContent: React.FC = () => {
             </div>
 
             {/* Floating Badge 2 */}
-            <div className="absolute bottom-12 -left-12 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob">
+            <div className="absolute bottom-12 -left-12 z-20 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600">
                   <Users size={20} />
@@ -119,6 +119,45 @@ const AppContent: React.FC = () => {
                 <div>
                   <p className="text-xs text-gray-500 font-bold uppercase">Live Class</p>
                   <p className="font-bold text-slate-800">CS101: Active</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Floating Badge 3 */}
+            <div className="absolute top-1/2 -right-12 z-20 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob animation-delay-4000">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center text-purple-600">
+                  <TrendingUp size={20} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-bold uppercase">Engagement</p>
+                  <p className="font-bold text-slate-800">98% Active</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Floating Badge 4 */}
+            <div className="absolute top-12 -left-8 z-20 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob delay-1000">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-orange-100 rounded-full flex items-center justify-center text-orange-600">
+                  <Bell size={20} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-bold uppercase">Reminder</p>
+                  <p className="font-bold text-slate-800">Next: 2:00 PM</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Floating Badge 5 */}
+            <div className="absolute bottom-8 -right-8 z-20 bg-white/90 backdrop-blur-md p-4 rounded-2xl shadow-xl border border-white/50 animate-blob delay-300">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-100 rounded-full flex items-center justify-center text-amber-600">
+                  <Award size={20} />
+                </div>
+                <div>
+                  <p className="text-xs text-gray-500 font-bold uppercase">Rating</p>
+                  <p className="font-bold text-slate-800">Top Rated 4.9</p>
                 </div>
               </div>
             </div>

@@ -2,16 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import {
     QrCode, History, BookOpen, LogOut, User,
-    CheckCircle, Clock, Calendar, Search, Filter, Plus, XCircle
+    CheckCircle, Clock, Calendar, Search, Filter, Plus, XCircle, Bell, MessageSquare
 } from 'lucide-react';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { ProfileModal } from './ProfileModal';
-import { Course, AttendanceRecord } from '../types';
+import { Course, AttendanceRecord, Message, Notification } from '../types';
+import { messageService } from '../services/messageService';
 
 export const StudentDashboard: React.FC = () => {
     const { user, signOut } = useAuth();
-    const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'courses'>('scan');
+    const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'courses' | 'messages'>('scan');
     const [scanResult, setScanResult] = useState<string | null>(null);
     const [manualCode, setManualCode] = useState('');
     const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -23,6 +24,10 @@ export const StudentDashboard: React.FC = () => {
     const [viewingHistoryCourse, setViewingHistoryCourse] = useState<string | null>(null);
     const [courseHistory, setCourseHistory] = useState<any[]>([]);
     const [loadingCourseHistory, setLoadingCourseHistory] = useState(false);
+    const [notifications, setNotifications] = useState<Notification[]>([]);
+    const [showNotifications, setShowNotifications] = useState(false);
+    const [messages, setMessages] = useState<Message[]>([]);
+    const [loadingMessages, setLoadingMessages] = useState(false);
 
     useEffect(() => {
         if (activeTab === 'scan') {
@@ -47,7 +52,70 @@ export const StudentDashboard: React.FC = () => {
         if (activeTab === 'courses' && user) {
             fetchCourses();
         }
+        if (activeTab === 'messages' && user) {
+            fetchMessages();
+        }
+        if (user) {
+            fetchNotifications();
+        }
     }, [activeTab, user]);
+
+    const fetchNotifications = async () => {
+        try {
+            const data = await messageService.getNotifications();
+            setNotifications(data);
+        } catch (error) {
+            console.error("Error fetching notifications:", error);
+        }
+    };
+
+    const fetchMessages = async () => {
+        setLoadingMessages(true);
+        try {
+            // Fetch messages for all enrolled courses
+            // Since we don't have a direct "get all messages" API, we iterate over courses
+            // Or better, update service to fetch all messages for enrolled courses
+            // For now, let's just fetch courses first if empty
+            let currentCourses = courses;
+            if (currentCourses.length === 0) {
+                // Quick fetch if needed, or rely on existing state if already fetched
+                // Let's assume courses are fetched or we fetch them now
+                const { data } = await supabase.from('enrollments').select('course_id').eq('student_uid', user?.id);
+                if (data) {
+                    const courseIds = data.map(d => d.course_id);
+                    // Now fetch messages for these courses
+                    const { data: msgs, error } = await supabase
+                        .from('messages')
+                        .select('*, courses(name, code)')
+                        .in('course_id', courseIds)
+                        .order('created_at', { ascending: false });
+
+                    if (msgs) setMessages(msgs as any);
+                }
+            } else {
+                const courseIds = currentCourses.map(c => c.id);
+                const { data: msgs } = await supabase
+                    .from('messages')
+                    .select('*, courses(name, code)')
+                    .in('course_id', courseIds)
+                    .order('created_at', { ascending: false });
+                if (msgs) setMessages(msgs as any);
+            }
+        } catch (error) {
+            console.error("Error fetching messages:", error);
+        } finally {
+            setLoadingMessages(false);
+        }
+    };
+
+    const handleMarkRead = async (id: string) => {
+        try {
+            await messageService.markNotificationRead(id);
+            setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+        } catch (error) {
+            console.error("Error marking read:", error);
+        }
+    };
 
     const fetchHistory = async () => {
         setLoadingHistory(true);
@@ -503,15 +571,96 @@ export const StudentDashboard: React.FC = () => {
         </div>
     );
 
+    const renderMessagesTab = () => (
+        <div className="max-w-4xl mx-auto animate-fade-in-up">
+            <div className="glass-card rounded-2xl overflow-hidden">
+                <div className="p-6 border-b border-gray-100 bg-white/50 backdrop-blur-sm">
+                    <h3 className="font-bold text-gray-800 flex items-center gap-2 text-lg">
+                        <MessageSquare className="text-indigo-600" /> Course Announcements
+                    </h3>
+                </div>
+                <div className="divide-y divide-gray-50">
+                    {loadingMessages ? (
+                        <div className="p-12 text-center text-gray-400">Loading messages...</div>
+                    ) : messages.length === 0 ? (
+                        <div className="p-12 text-center text-gray-400">
+                            <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-20" />
+                            <p>No announcements yet.</p>
+                        </div>
+                    ) : (
+                        messages.map((msg: any) => (
+                            <div key={msg.id} className="p-6 hover:bg-indigo-50/30 transition-colors">
+                                <div className="flex justify-between items-start mb-2">
+                                    <span className="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs font-bold rounded-md">
+                                        {msg.courses?.code}
+                                    </span>
+                                    <span className="text-xs text-gray-400">
+                                        {new Date(msg.created_at).toLocaleDateString()}
+                                    </span>
+                                </div>
+                                <h4 className="text-lg font-bold text-gray-800 mb-2">{msg.title}</h4>
+                                <p className="text-gray-600 leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
     return (
         <div className="container mx-auto px-4 py-8">
             {/* Header */}
-            <div className="flex justify-between items-center mb-8">
+            <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 text-center md:text-left">
                 <div>
-                    <h1 className="text-2xl font-black text-slate-800">Student Dashboard</h1>
+                    <h1 className="text-2xl md:text-3xl font-black text-slate-800">Student Dashboard</h1>
                     <p className="text-slate-500">Track your attendance and courses</p>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex gap-3 w-full md:w-auto justify-center items-center">
+                    {/* Notifications Bell */}
+                    <div className="relative">
+                        <button
+                            onClick={() => setShowNotifications(!showNotifications)}
+                            className="p-2 text-slate-600 hover:bg-indigo-50 rounded-full transition-colors relative"
+                        >
+                            <Bell size={24} />
+                            {notifications.some(n => !n.isRead) && (
+                                <span className="absolute top-1 right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
+                            )}
+                        </button>
+
+                        {showNotifications && (
+                            <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden z-50 animate-in fade-in zoom-in-95">
+                                <div className="p-4 border-b border-gray-50 bg-gray-50/50 flex justify-between items-center">
+                                    <h4 className="font-bold text-gray-700">Notifications</h4>
+                                    <span className="text-xs text-gray-500">{notifications.filter(n => !n.isRead).length} new</span>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                    {notifications.length === 0 ? (
+                                        <div className="p-8 text-center text-gray-400 text-sm">No notifications</div>
+                                    ) : (
+                                        notifications.map(n => (
+                                            <div
+                                                key={n.id}
+                                                onClick={() => handleMarkRead(n.id)}
+                                                className={`p-4 border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors ${!n.isRead ? 'bg-indigo-50/30' : ''}`}
+                                            >
+                                                <div className="flex gap-3">
+                                                    <div className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${!n.isRead ? 'bg-indigo-500' : 'bg-gray-300'}`}></div>
+                                                    <div>
+                                                        <p className={`text-sm ${!n.isRead ? 'font-bold text-gray-800' : 'text-gray-600'}`}>{n.title}</p>
+                                                        <p className="text-xs text-gray-500 mt-1 line-clamp-2">{n.message}</p>
+                                                        <p className="text-[10px] text-gray-400 mt-2">{new Date(n.createdAt).toLocaleDateString()}</p>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <button
                         onClick={() => setIsProfileOpen(true)}
                         className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
@@ -530,25 +679,31 @@ export const StudentDashboard: React.FC = () => {
             </div>
 
             {/* Dashboard Nav */}
-            <div className="flex justify-center mb-10">
-                <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl shadow-sm border border-gray-200 inline-flex">
+            <div className="flex justify-start md:justify-center mb-10 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+                <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl shadow-sm border border-gray-200 inline-flex min-w-max">
                     <button
                         onClick={() => setActiveTab('scan')}
-                        className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'scan' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+                        className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'scan' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
                     >
                         Scan Code
                     </button>
                     <button
                         onClick={() => setActiveTab('courses')}
-                        className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'courses' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+                        className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'courses' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
                     >
                         My Courses
                     </button>
                     <button
                         onClick={() => setActiveTab('history')}
-                        className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+                        className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
                     >
                         History
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('messages')}
+                        className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'messages' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+                    >
+                        Messages
                     </button>
                 </div>
             </div>
@@ -556,6 +711,7 @@ export const StudentDashboard: React.FC = () => {
             {activeTab === 'scan' && renderScanTab()}
             {activeTab === 'courses' && renderCoursesTab()}
             {activeTab === 'history' && renderHistoryTab()}
+            {activeTab === 'messages' && renderMessagesTab()}
 
             <ProfileModal
                 isOpen={isProfileOpen}

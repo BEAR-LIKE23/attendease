@@ -38,3 +38,22 @@ export interface AnalysisResult {
   attendanceRate: number;
   recommendations: string[];
 }
+
+export interface Message {
+  id: string;
+  courseId: string;
+  senderId: string;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  type: 'info' | 'warning' | 'success' | 'error';
+  createdAt: string;
+}

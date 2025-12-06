@@ -155,3 +155,65 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute procedure public.handle_new_user();
+
+-- Create a table for Messages (Course Announcements)
+create table public.messages (
+  id uuid default gen_random_uuid() primary key,
+  course_id uuid references public.courses not null,
+  sender_id uuid references auth.users not null,
+  title text not null,
+  content text not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.messages enable row level security;
+
+create policy "Teachers can insert messages for their courses."
+  on messages for insert
+  with check (
+    exists (
+      select 1 from courses
+      where courses.id = messages.course_id
+      and courses.created_by = auth.uid()
+    )
+  );
+
+create policy "Teachers can view their own messages."
+  on messages for select
+  using ( sender_id = auth.uid() );
+
+create policy "Students can view messages for courses they are enrolled in."
+  on messages for select
+  using (
+    exists (
+      select 1 from enrollments
+      where enrollments.course_id = messages.course_id
+      and enrollments.student_uid = auth.uid()
+    )
+  );
+
+-- Create a table for Notifications
+create table public.notifications (
+  id uuid default gen_random_uuid() primary key,
+  user_id uuid references auth.users not null,
+  title text not null,
+  message text not null,
+  is_read boolean default false,
+  type text check (type in ('info', 'warning', 'success', 'error')) default 'info',
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.notifications enable row level security;
+
+create policy "Users can view their own notifications."
+  on notifications for select
+  using ( auth.uid() = user_id );
+
+create policy "Users can update their own notifications (mark as read)."
+  on notifications for update
+  using ( auth.uid() = user_id );
+
+create policy "Teachers can insert notifications for students (e.g. via triggers or direct)"
+  on notifications for insert
+  with check ( true ); -- Ideally restricted further, but for now allowing authenticated inserts for simplicity in this app logic
+

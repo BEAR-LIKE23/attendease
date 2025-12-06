@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Plus, Users, QrCode, BarChart3, Clock,
   CheckCircle, RefreshCw, XCircle, BrainCircuit, Download,
-  Calendar, Search, Filter, BookOpen, Copy, User, LogOut
+  Calendar, Search, Filter, BookOpen, Copy, User, LogOut, MessageSquare, Send
 } from 'lucide-react';
 import { ProfileModal } from './ProfileModal';
 import { StudentListModal } from './teacher/StudentListModal';
@@ -15,6 +15,7 @@ import { generateAttendanceReport } from '../services/geminiService';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
+import { messageService } from '../services/messageService';
 
 interface TeacherDashboardProps {
   // Props are now optional as we fetch internally
@@ -29,7 +30,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
   const [sessions, setSessions] = useState<ClassSession[]>([]);
   const [courses, setCourses] = useState<Course[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
-  const [activeTab, setActiveTab] = useState<'create' | 'live' | 'history' | 'courses'>('courses');
+  const [activeTab, setActiveTab] = useState<'create' | 'live' | 'history' | 'courses' | 'messages'>('courses');
   const [selectedSession, setSelectedSession] = useState<ClassSession | null>(null);
   const [report, setReport] = useState<{ summary: string; insights: string[] } | null>(null);
   const [loadingReport, setLoadingReport] = useState(false);
@@ -601,15 +602,107 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     );
   };
 
+  const renderMessagesTab = () => {
+    const [selectedCourseId, setSelectedCourseId] = useState<string>('');
+    const [title, setTitle] = useState('');
+    const [content, setContent] = useState('');
+    const [sending, setSending] = useState(false);
+
+    const handleSendMessage = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!selectedCourseId || !title || !content) return;
+
+      setSending(true);
+      try {
+        await messageService.sendMessage(selectedCourseId, title, content);
+        alert('Message sent successfully!');
+        setTitle('');
+        setContent('');
+      } catch (error) {
+        console.error('Error sending message:', error);
+        alert('Failed to send message.');
+      } finally {
+        setSending(false);
+      }
+    };
+
+    return (
+      <div className="max-w-2xl mx-auto animate-fade-in-up">
+        <div className="glass-card p-8 rounded-2xl">
+          <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+            <MessageSquare className="text-indigo-600" /> Send Announcement
+          </h3>
+
+          <form onSubmit={handleSendMessage} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Select Course</label>
+              <select
+                value={selectedCourseId}
+                onChange={(e) => setSelectedCourseId(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white/50"
+                required
+              >
+                <option value="">-- Select a Course --</option>
+                {courses.map(course => (
+                  <option key={course.id} value={course.id}>
+                    {course.name} ({course.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Subject</label>
+              <input
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="e.g. Midterm Exam Schedule"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white/50"
+                required
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Message</label>
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                placeholder="Write your message here..."
+                rows={5}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all bg-white/50 resize-none"
+                required
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={sending || !selectedCourseId}
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-all shadow-lg hover:shadow-indigo-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {sending ? (
+                <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Send size={18} /> Send Announcement
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
-      <div className="flex justify-between items-center mb-8">
+      <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4 text-center md:text-left">
         <div>
-          <h1 className="text-2xl font-black text-slate-800">Teacher Dashboard</h1>
+          <h1 className="text-2xl md:text-3xl font-black text-slate-800">Teacher Dashboard</h1>
           <p className="text-slate-500">Manage your courses and sessions</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 w-full md:w-auto justify-center">
           <button
             onClick={() => setIsProfileOpen(true)}
             className="flex items-center gap-2 px-4 py-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
@@ -628,31 +721,37 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
       </div>
 
       {/* Dashboard Nav */}
-      <div className="flex justify-center mb-10">
-        <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl shadow-sm border border-gray-200 inline-flex">
+      <div className="flex justify-start md:justify-center mb-10 overflow-x-auto pb-2 scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
+        <div className="bg-white/80 backdrop-blur-md p-1.5 rounded-2xl shadow-sm border border-gray-200 inline-flex min-w-max">
           <button
             onClick={() => setActiveTab('courses')}
-            className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'courses' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+            className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'courses' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
           >
             Courses
           </button>
           <button
             onClick={() => setActiveTab('create')}
-            className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'create' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+            className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'create' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
           >
             Create Session
           </button>
           <button
             onClick={() => setActiveTab('live')}
-            className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'live' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+            className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'live' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
           >
             Live Monitor
           </button>
           <button
             onClick={() => setActiveTab('history')}
-            className={`px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+            className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
           >
             History & Insights
+          </button>
+          <button
+            onClick={() => setActiveTab('messages')}
+            className={`px-6 md:px-8 py-3 rounded-xl text-sm font-bold transition-all duration-200 ${activeTab === 'messages' ? 'bg-indigo-600 text-white shadow-md' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-50'}`}
+          >
+            Messages
           </button>
         </div>
       </div>
@@ -661,6 +760,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
       {activeTab === 'create' && renderCreateTab()}
       {activeTab === 'live' && renderLiveTab()}
       {activeTab === 'history' && renderHistoryTab()}
+      {activeTab === 'messages' && renderMessagesTab()}
 
       {/* Students Modal */}
       <StudentListModal
