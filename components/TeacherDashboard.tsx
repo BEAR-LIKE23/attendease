@@ -178,10 +178,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
           // Update local state to reflect new code
           setSessions(prev => prev.map(s => s.id === activeSession.id ? { ...s, code: newCode } : s));
           setDynamicQrCode(newCode); // Update display immediately
-        } else {
-          console.error("Failed to rotate QR code", error);
         }
-      }, 10000); // 10 seconds for testing responsiveness, plan said 30s. Let's do 10s for faster demo? No, let's stick to 15s.
+      }, 45000); // 45 seconds as requested by user.
 
       return () => clearInterval(interval);
     }

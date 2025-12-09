@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import {
     QrCode, History, BookOpen, LogOut, User,
@@ -44,7 +44,8 @@ export const StudentDashboard: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [loadingMessages, setLoadingMessages] = useState(false);
 
-    const [scanStep, setScanStep] = useState<'scanning' | 'success'>('scanning');
+    const isScanningRef = useRef(false); // Lock to prevent duplicate scans
+    const [scanStep, setScanStep] = useState<'scanning' | 'processing' | 'success'>('scanning');
     const [successData, setSuccessData] = useState<{
         className: string;
         topic: string;
@@ -194,13 +195,13 @@ export const StudentDashboard: React.FC = () => {
 
         } catch (error: any) {
             setToast({ type: 'error', message: error.message });
-            // If failed, we might want to let them scan again?
-            // Usually scanner is still running if we didn't unmount or if we mount it back.
-            // But if we want to "stop scanning immediately", we should have paused.
-            // For now, on error, we stay in 'scanning' mode to allow retry.
+            // On failure, restart scanning after a brief delay or immediately
+            setScanStep('scanning'); // Remount scanner
             if (currentSessionId) {
                 await logScanAttempt(currentSessionId, 'failed', error.message, lat, lng);
             }
+        } finally {
+            isScanningRef.current = false;
         }
     };
 
@@ -248,6 +249,12 @@ export const StudentDashboard: React.FC = () => {
                                 </button>
                             </form>
                         </>
+                    ) : scanStep === 'processing' ? (
+                        <div className="text-center animate-in fade-in duration-300 py-12">
+                            <div className="w-16 h-16 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin mx-auto mb-6"></div>
+                            <h3 className="text-xl font-bold text-gray-800 mb-2">Verifying...</h3>
+                            <p className="text-gray-500">Please wait while we check your attendance.</p>
+                        </div>
                     ) : (
                         <div className="text-center animate-in zoom-in duration-300">
                             <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 shadow-lg shadow-green-100/50">
@@ -424,8 +431,14 @@ export const StudentDashboard: React.FC = () => {
     };
 
     const onScanSuccess = (decodedText: string) => {
+        if (isScanningRef.current) return;
+        isScanningRef.current = true;
+        setScanStep('processing');
         setScanResult(decodedText);
-        handleAttendance(decodedText);
+        handleAttendance(decodedText).catch(() => {
+            // Unlock on immediate failure before async part completes if any
+            isScanningRef.current = false;
+        });
     };
 
     const onScanFailure = (error: any) => {
