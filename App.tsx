@@ -11,13 +11,21 @@ const AppContent: React.FC = () => {
   const [role, setRole] = useState<UserRole>(UserRole.NONE);
 
   // Auto-redirect based on user role if logged in
+  // Auto-redirect or Strict Validation
   useEffect(() => {
-    if (user && role === UserRole.NONE) {
+    if (user) {
       const userRole = user.user_metadata?.role;
-      if (userRole === 'student') {
-        setRole(UserRole.STUDENT);
-      } else {
-        setRole(UserRole.TEACHER);
+      const actualRole = userRole === 'student' ? UserRole.STUDENT : UserRole.TEACHER;
+
+      // 1. If user just landed (role is NONE), auto-detect
+      if (role === UserRole.NONE) {
+        setRole(actualRole);
+      }
+      // 2. If user selected a specific portal but mismatches their metadata -> REJECT
+      else if (role !== actualRole) {
+        alert(`Access Denied. You are registered as a ${userRole?.toUpperCase()} but tried to login to the ${role} portal.`);
+        signOut(); // Log them out immediately
+        setRole(UserRole.NONE); // Return to selection screen
       }
     }
   }, [user, role]);
@@ -190,46 +198,21 @@ const AppContent: React.FC = () => {
   }
 
   // Authenticated Views
-  if (role === UserRole.STUDENT) {
-    return <StudentDashboard />;
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white shadow-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2 cursor-pointer" onClick={() => setRole(UserRole.NONE)}>
+          <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-lg">A</span>
             </div>
             <span className="font-bold text-xl text-gray-800 hidden sm:block">AttendEase</span>
           </div>
-
-          <div className="flex items-center gap-4">
-            <span className="text-sm font-medium px-3 py-1 bg-gray-100 rounded-full text-gray-600">
-              Teacher Portal
-            </span>
-            {user && (
-              <span className="text-sm text-gray-500 hidden sm:block">
-                {user.email}
-              </span>
-            )}
-            <button
-              onClick={() => {
-                signOut();
-                setRole(UserRole.NONE);
-              }}
-              className="p-2 text-gray-400 hover:text-red-500 transition-colors rounded-full hover:bg-gray-100"
-              title="Exit"
-            >
-              <LogOut size={20} />
-            </button>
-          </div>
         </div>
       </header>
 
       <main className="animate-in fade-in duration-500">
-        <TeacherDashboard />
+        {role === UserRole.STUDENT ? <StudentDashboard /> : <TeacherDashboard />}
       </main>
     </div>
   );

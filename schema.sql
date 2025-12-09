@@ -116,6 +116,7 @@ create table public.attendance (
   latitude float,
   longitude float,
   device_info text,
+  device_id text,
   distance_from_session float,
   unique(session_id, student_id) -- Prevent duplicate check-ins by ID
 );
@@ -251,4 +252,4 @@ create policy "Teachers can view scan logs for their sessions."
 create policy "Students can insert logs (even failures)."
   on scan_logs for insert
   with check ( true );
-
+  

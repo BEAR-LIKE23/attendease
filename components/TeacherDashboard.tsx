@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Plus, Users, QrCode, BarChart3, Clock,
-  CheckCircle, RefreshCw, XCircle, BrainCircuit, Download,
+  CheckCircle, RefreshCw, XCircle, BrainCircuit, Download, AlertTriangle,
   Calendar, Search, Filter, BookOpen, Copy, User, LogOut, MessageSquare, Send, History, ShieldAlert
 } from 'lucide-react';
 import { ProfileModal } from './ProfileModal';
@@ -108,7 +108,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
           sessionId: a.session_id,
           studentName: a.student_name,
           studentId: a.student_id,
-          timestamp: a.timestamp
+          timestamp: a.timestamp,
+          deviceId: a.device_id
         }));
         setAttendance(mappedAttendance);
       }
@@ -426,6 +427,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
     );
 
     const currentAttendance = getSessionAttendance(activeSession.id);
+    const deviceCounts = currentAttendance.reduce((acc, curr) => {
+      if (curr.deviceId) acc[curr.deviceId] = (acc[curr.deviceId] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
 
     return (
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 animate-fade-in-up">
@@ -513,7 +518,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
                         {record.studentName.charAt(0)}
                       </div>
                       <div>
-                        <p className="font-bold text-gray-900 text-lg">{record.studentName}</p>
+                        <p className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                          {record.studentName}
+                          {record.deviceId && deviceCounts[record.deviceId] > 1 && (
+                            <div className="group relative">
+                              <AlertTriangle className="text-amber-500 w-5 h-5 cursor-help" />
+                              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-48 bg-gray-800 text-white text-xs rounded-lg p-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+                                Shared Device Detected
+                              </div>
+                            </div>
+                          )}
+                        </p>
                         <p className="text-sm text-gray-500 font-medium flex items-center gap-1">
                           <span className="w-1.5 h-1.5 rounded-full bg-indigo-300"></span>
                           ID: {record.studentId}

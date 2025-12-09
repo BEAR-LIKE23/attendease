@@ -12,6 +12,19 @@ import { messageService } from '../services/messageService';
 import { Toast } from './Toast';
 import { calculateDistance } from '../utils/location';
 
+const getDeviceId = () => {
+    let id = localStorage.getItem('attendease_device_id');
+    if (!id) {
+        if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+            id = crypto.randomUUID();
+        } else {
+            id = Math.random().toString(36).substring(2) + Date.now().toString(36);
+        }
+        localStorage.setItem('attendease_device_id', id);
+    }
+    return id;
+};
+
 export const StudentDashboard: React.FC = () => {
     const { user, signOut } = useAuth();
     const [activeTab, setActiveTab] = useState<'scan' | 'history' | 'courses' | 'messages'>('scan');
@@ -31,12 +44,21 @@ export const StudentDashboard: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [loadingMessages, setLoadingMessages] = useState(false);
 
+    const [scanStep, setScanStep] = useState<'scanning' | 'success'>('scanning');
+    const [successData, setSuccessData] = useState<{
+        className: string;
+        topic: string;
+        teacherName: string;
+        startTime: string;
+        signInTime: string;
+    } | null>(null);
+
     useEffect(() => {
-        if (activeTab === 'scan') {
+        if (activeTab === 'scan' && scanStep === 'scanning') {
             const scanner = new Html5QrcodeScanner(
                 "reader",
                 { fps: 10, qrbox: { width: 250, height: 250 } },
-                /* verbose= */ false
+                false
             );
 
             scanner.render(onScanSuccess, onScanFailure);
@@ -45,7 +67,237 @@ export const StudentDashboard: React.FC = () => {
                 scanner.clear().catch(error => console.error("Failed to clear scanner", error));
             };
         }
-    }, [activeTab]);
+    }, [activeTab, scanStep]);
+
+    const handleAttendance = async (code: string) => {
+        setToast(null);
+        let currentSessionId = '';
+        let lat: number | null = null;
+        let lng: number | null = null;
+
+        try {
+            // Stop scanning immediately by unmounting the scanner (via state change logic later or explicit clear matches this flow if we change state)
+            // Ideally we pause scanning first? 
+            // Better: We set 'scanStep' to 'processing' (implied by 'scanning' -> 'success' transition, but we need intermediate if we want to validat).
+            // For now, let's keep scanner mounted until valid?
+            // User said: "immediately the first scan ... stop scanning"
+            // So we should ideally stop. But if it fails, we need to restart?
+            // Let's assume we stop.
+
+            // 1. Find the session
+            const { data: session, error: sessionError } = await supabase
+                .from('sessions')
+                .select('*')
+                .eq('code', code)
+                .eq('is_active', true)
+                .single();
+
+            if (sessionError || !session) throw new Error("Invalid or inactive session code.");
+
+            currentSessionId = session.id;
+
+            // Fetch Teacher Name
+            const { data: teacherProfile } = await supabase
+                .from('profiles')
+                .select('full_name')
+                .eq('id', session.created_by)
+                .single();
+
+            const teacherName = teacherProfile?.full_name || 'Unknown Teacher';
+
+            // 2. Check if already marked
+            const { data: existing, error: checkError } = await supabase
+                .from('attendance')
+                .select('*')
+                .eq('session_id', session.id)
+                .eq('student_uid', user?.id)
+                .single();
+
+            if (existing) throw new Error("You have already marked attendance for this session.");
+
+            // 3. Cooldown check
+            const { data: lastAttendance } = await supabase
+                .from('attendance')
+                .select('timestamp')
+                .eq('student_uid', user?.id)
+                .order('timestamp', { ascending: false })
+                .limit(1)
+                .single();
+
+            if (lastAttendance) {
+                const lastTime = new Date(lastAttendance.timestamp).getTime();
+                const now = new Date().getTime();
+                const diffMinutes = (now - lastTime) / (1000 * 60);
+                if (diffMinutes < 30) {
+                    throw new Error(`Please wait ${Math.ceil(30 - diffMinutes)} minutes before scanning into another class.`);
+                }
+            }
+
+            // 4. Validation: Location
+            let distance: number | null = null;
+            const deviceInfo = navigator.userAgent;
+
+            if (session.max_distance_meters && session.latitude && session.longitude) {
+                try {
+                    setToast({ type: 'info', message: 'Verifying location...' });
+                    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 5000,
+                            maximumAge: 0
+                        });
+                    });
+                    lat = pos.coords.latitude;
+                    lng = pos.coords.longitude;
+                    distance = calculateDistance(lat, lng, session.latitude, session.longitude);
+
+                    if (distance > session.max_distance_meters) {
+                        throw new Error(`You are too far from the class! Distance: ${Math.round(distance)}m (Max: ${session.max_distance_meters}m)`);
+                    }
+                } catch (error: any) {
+                    if (error.code === 1) throw new Error("Location access denied.");
+                    if (error.message?.includes("too far")) throw error;
+                    throw new Error("Could not verify location.");
+                }
+            }
+
+            // 5. Mark attendance
+            const { error: insertError } = await supabase
+                .from('attendance')
+                .insert([{
+                    session_id: session.id,
+                    student_uid: user?.id,
+                    student_name: user?.user_metadata?.full_name || user?.email,
+                    student_id: user?.user_metadata?.student_id_number || 'N/A',
+                    timestamp: new Date().toISOString(),
+                    latitude: lat,
+                    longitude: lng,
+                    device_info: deviceInfo,
+                    device_id: getDeviceId(),
+                    distance_from_session: distance
+                }]);
+
+            if (insertError) throw insertError;
+
+            await logScanAttempt(session.id, 'success', undefined, lat, lng);
+
+            // SUCCESS! Show the Success Screen
+            setSuccessData({
+                className: session.class_name,
+                topic: session.topic,
+                teacherName: teacherName,
+                startTime: session.created_at,
+                signInTime: new Date().toISOString()
+            });
+            setScanStep('success'); // This unmounts the scanner
+            setScanResult(null);
+
+        } catch (error: any) {
+            setToast({ type: 'error', message: error.message });
+            // If failed, we might want to let them scan again?
+            // Usually scanner is still running if we didn't unmount or if we mount it back.
+            // But if we want to "stop scanning immediately", we should have paused.
+            // For now, on error, we stay in 'scanning' mode to allow retry.
+            if (currentSessionId) {
+                await logScanAttempt(currentSessionId, 'failed', error.message, lat, lng);
+            }
+        }
+    };
+
+    const handleManualSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (manualCode) {
+            handleAttendance(manualCode);
+        }
+    };
+
+    const renderScanTab = () => (
+        <div className="max-w-2xl mx-auto animate-fade-in-up">
+            <div className="glass-card rounded-2xl overflow-hidden shadow-xl">
+                {/* Header matches previous design */}
+                <div className="bg-slate-900 p-8 text-center relative overflow-hidden">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                    <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500 rounded-full blur-3xl opacity-20"></div>
+                    <h2 className="text-2xl font-bold text-white mb-2 relative z-10">Scan Attendance Code</h2>
+                    <p className="text-slate-400 relative z-10">Point your camera at the QR code</p>
+                </div>
+
+                <div className="p-8">
+                    {scanStep === 'scanning' ? (
+                        <>
+                            <div className="bg-slate-50 p-4 rounded-2xl border-2 border-dashed border-slate-200 mb-8">
+                                <div id="reader" className="overflow-hidden rounded-xl"></div>
+                            </div>
+
+                            <div className="relative flex py-5 items-center">
+                                <div className="flex-grow border-t border-gray-200"></div>
+                                <span className="flex-shrink-0 mx-4 text-gray-400 text-sm font-medium uppercase tracking-wider">Or enter manually</span>
+                                <div className="flex-grow border-t border-gray-200"></div>
+                            </div>
+
+                            <form onSubmit={handleManualSubmit} className="flex gap-3">
+                                <input
+                                    type="text"
+                                    value={manualCode}
+                                    onChange={(e) => setManualCode(e.target.value)}
+                                    placeholder="Enter 6-digit code"
+                                    className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-mono text-center text-lg tracking-widest uppercase"
+                                />
+                                <button type="submit" className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-md">
+                                    Submit
+                                </button>
+                            </form>
+                        </>
+                    ) : (
+                        <div className="text-center animate-in zoom-in duration-300">
+                            <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 shadow-lg shadow-green-100/50">
+                                <CheckCircle size={40} strokeWidth={3} />
+                            </div>
+                            <h3 className="text-2xl font-black text-slate-800 mb-2">Attendance Marked!</h3>
+                            <p className="text-slate-500 mb-8">You have successfully signed in.</p>
+
+                            <div className="bg-slate-50 rounded-2xl p-6 mb-8 border border-slate-100 text-left space-y-4 shadow-inner">
+                                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                                    <span className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Class</span>
+                                    <span className="font-bold text-slate-800 text-right">{successData?.className}</span>
+                                </div>
+                                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                                    <span className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Teacher</span>
+                                    <span className="font-bold text-slate-800 text-right">{successData?.teacherName}</span>
+                                </div>
+                                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                                    <span className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Topic</span>
+                                    <span className="font-bold text-slate-800 text-right">{successData?.topic}</span>
+                                </div>
+                                <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+                                    <span className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Started At</span>
+                                    <span className="font-bold text-slate-800 text-right font-mono text-sm">
+                                        {successData?.startTime && new Date(successData.startTime).toLocaleTimeString()}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center">
+                                    <span className="text-sm font-semibold text-slate-400 uppercase tracking-wider">Signed In</span>
+                                    <span className="font-bold text-emerald-600 text-right font-mono text-sm">
+                                        {successData?.signInTime && new Date(successData.signInTime).toLocaleTimeString()}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    setScanStep('scanning');
+                                    setSuccessData(null);
+                                }}
+                                className="w-full py-4 bg-slate-900 text-white font-bold rounded-xl hover:bg-slate-800 transition-all shadow-lg hover:shadow-xl"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
 
     useEffect(() => {
         if (activeTab === 'history' && user) {
@@ -202,123 +454,6 @@ export const StudentDashboard: React.FC = () => {
         }
     };
 
-    const handleAttendance = async (code: string) => {
-        setToast(null);
-        let currentSessionId = '';
-        let lat: number | null = null;
-        let lng: number | null = null;
-
-        try {
-            // 1. Find the session
-            const { data: session, error: sessionError } = await supabase
-                .from('sessions')
-                .select('*')
-                .eq('code', code)
-                .eq('is_active', true)
-                .single();
-
-            if (sessionError || !session) throw new Error("Invalid or inactive session code.");
-
-            currentSessionId = session.id;
-
-            // 2. Check if already marked
-            const { data: existing, error: checkError } = await supabase
-                .from('attendance')
-                .select('*')
-                .eq('session_id', session.id)
-                .eq('student_uid', user?.id)
-                .single();
-
-            if (existing) throw new Error("You have already marked attendance for this session.");
-
-            // 3. Check for cooldown (30 minutes)
-            const { data: lastAttendance } = await supabase
-                .from('attendance')
-                .select('timestamp')
-                .eq('student_uid', user?.id)
-                .order('timestamp', { ascending: false })
-                .limit(1)
-                .single();
-
-            if (lastAttendance) {
-                const lastTime = new Date(lastAttendance.timestamp).getTime();
-                const now = new Date().getTime();
-                const diffMinutes = (now - lastTime) / (1000 * 60);
-                if (diffMinutes < 30) {
-                    throw new Error(`Please wait ${Math.ceil(30 - diffMinutes)} minutes before scanning into another class.`);
-                }
-            }
-
-            // 4. Validation: Location & Metadata
-            let distance: number | null = null;
-            const deviceInfo = navigator.userAgent;
-
-            if (session.max_distance_meters && session.latitude && session.longitude) {
-                try {
-                    setToast({ type: 'info', message: 'Verifying location...' });
-                    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-                        navigator.geolocation.getCurrentPosition(resolve, reject, {
-                            enableHighAccuracy: true,
-                            timeout: 5000,
-                            maximumAge: 0
-                        });
-                    });
-                    lat = pos.coords.latitude;
-                    lng = pos.coords.longitude;
-
-                    distance = calculateDistance(lat, lng, session.latitude, session.longitude);
-
-                    if (distance > session.max_distance_meters) {
-                        throw new Error(`You are too far from the class! Distance: ${Math.round(distance)}m (Max: ${session.max_distance_meters}m)`);
-                    }
-
-                } catch (error: any) {
-                    if (error.code === 1) throw new Error("Location access denied. Please enable location to mark attendance.");
-                    if (error.message?.includes("too far")) throw error;
-                    // validation failed logic
-                    throw new Error("Could not verify location. Please ensure GPS is enabled.");
-                }
-            }
-
-
-            // 5. Mark attendance
-            const { error: insertError } = await supabase
-                .from('attendance')
-                .insert([
-                    {
-                        session_id: session.id,
-                        student_uid: user?.id,
-                        student_name: user?.user_metadata?.full_name || user?.email,
-                        student_id: user?.user_metadata?.student_id_number || 'N/A',
-                        timestamp: new Date().toISOString(),
-                        latitude: lat,
-                        longitude: lng,
-                        device_info: deviceInfo,
-                        distance_from_session: distance
-                    }
-                ]);
-
-            if (insertError) throw insertError;
-
-            await logScanAttempt(session.id, 'success', undefined, lat, lng);
-            setToast({ type: 'success', message: `Attendance marked for ${session.class_name}!` });
-            setScanResult(null); // Reset scan result to allow re-scan if needed (though usually one per session)
-
-        } catch (error: any) {
-            setToast({ type: 'error', message: error.message });
-            if (currentSessionId) {
-                await logScanAttempt(currentSessionId, 'failed', error.message, lat, lng);
-            }
-        }
-    };
-
-    const handleManualSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (manualCode) {
-            handleAttendance(manualCode);
-        }
-    };
-
     const handleEnroll = async (e: React.FormEvent) => {
         e.preventDefault();
         setToast(null);
@@ -420,48 +555,6 @@ export const StudentDashboard: React.FC = () => {
     };
 
 
-    const renderScanTab = () => (
-        <div className="max-w-2xl mx-auto animate-fade-in-up">
-            <div className="glass-card rounded-2xl overflow-hidden shadow-xl">
-                <div className="bg-slate-900 p-8 text-center relative overflow-hidden">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
-                    <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500 rounded-full blur-3xl opacity-20"></div>
-                    <h2 className="text-2xl font-bold text-white mb-2 relative z-10">Scan Attendance Code</h2>
-                    <p className="text-slate-400 relative z-10">Point your camera at the QR code displayed by the teacher</p>
-                </div>
-
-                <div className="p-8">
-
-
-                    <div className="bg-slate-50 p-4 rounded-2xl border-2 border-dashed border-slate-200 mb-8">
-                        <div id="reader" className="overflow-hidden rounded-xl"></div>
-                    </div>
-
-                    <div className="relative flex py-5 items-center">
-                        <div className="flex-grow border-t border-gray-200"></div>
-                        <span className="flex-shrink-0 mx-4 text-gray-400 text-sm font-medium uppercase tracking-wider">Or enter manually</span>
-                        <div className="flex-grow border-t border-gray-200"></div>
-                    </div>
-
-                    <form onSubmit={handleManualSubmit} className="flex gap-3">
-                        <input
-                            type="text"
-                            value={manualCode}
-                            onChange={(e) => setManualCode(e.target.value)}
-                            placeholder="Enter 6-digit code"
-                            className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none transition-all font-mono text-center text-lg tracking-widest uppercase"
-                        />
-                        <button
-                            type="submit"
-                            className="px-6 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors shadow-md"
-                        >
-                            Submit
-                        </button>
-                    </form>
-                </div>
-            </div>
-        </div>
-    );
 
     const renderHistoryTab = () => (
         <div className="max-w-4xl mx-auto animate-fade-in-up">

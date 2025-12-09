@@ -13,6 +13,7 @@ export interface AttendanceRecord {
   latitude?: number;
   longitude?: number;
   deviceInfo?: string;
+  deviceId?: string;
   distanceFromSession?: number;
 }
 
