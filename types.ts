@@ -10,6 +10,10 @@ export interface AttendanceRecord {
   studentId: string;
   sessionId: string;
   timestamp: string; // ISO string
+  latitude?: number;
+  longitude?: number;
+  deviceInfo?: string;
+  distanceFromSession?: number;
 }
 
 export interface Course {
@@ -31,6 +35,10 @@ export interface ClassSession {
   code: string; // The unique code generated for QR
   createdAt: string; // ISO string
   isActive: boolean;
+  latitude?: number;
+  longitude?: number;
+  useDynamicQr?: boolean;
+  maxDistanceMeters?: number;
 }
 
 export interface AnalysisResult {
@@ -60,4 +68,16 @@ export interface Notification {
   isRead: boolean;
   type: 'info' | 'warning' | 'success' | 'error';
   createdAt: string;
+}
+
+export interface ScanLog {
+  id: string;
+  sessionId: string;
+  studentUid: string;
+  status: 'success' | 'failed';
+  failureReason?: string;
+  timestamp: string;
+  latitude?: number;
+  longitude?: number;
+  deviceInfo?: string;
 }

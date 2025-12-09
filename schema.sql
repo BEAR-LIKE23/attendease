@@ -83,6 +83,10 @@ create table public.sessions (
   topic text not null,
   code text not null unique,
   is_active boolean default true,
+  latitude float, -- Teacher's location
+  longitude float,
+  use_dynamic_qr boolean default false,
+  max_distance_meters integer default 100,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -109,6 +113,10 @@ create table public.attendance (
   student_name text not null, -- Fallback or snapshot
   student_id text not null, -- Fallback or snapshot
   timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  latitude float,
+  longitude float,
+  device_info text,
+  distance_from_session float,
   unique(session_id, student_id) -- Prevent duplicate check-ins by ID
 );
 
@@ -213,7 +221,34 @@ create policy "Users can update their own notifications (mark as read)."
   on notifications for update
   using ( auth.uid() = user_id );
 
-create policy "Teachers can insert notifications for students (e.g. via triggers or direct)"
-  on notifications for insert
   with check ( true ); -- Ideally restricted further, but for now allowing authenticated inserts for simplicity in this app logic
+
+-- Create a table for Scan Logs (Analytics & Fraud Detection)
+create table public.scan_logs (
+  id uuid default gen_random_uuid() primary key,
+  session_id uuid references public.sessions,
+  student_uid uuid references auth.users,
+  status text check (status in ('success', 'failed')),
+  failure_reason text,
+  timestamp timestamp with time zone default timezone('utc'::text, now()) not null,
+  latitude float,
+  longitude float,
+  device_info text
+);
+
+alter table public.scan_logs enable row level security;
+
+create policy "Teachers can view scan logs for their sessions."
+  on scan_logs for select
+  using (
+    exists (
+      select 1 from sessions
+      where sessions.id = scan_logs.session_id
+      and sessions.created_by = auth.uid()
+    )
+  );
+
+create policy "Students can insert logs (even failures)."
+  on scan_logs for insert
+  with check ( true );
 

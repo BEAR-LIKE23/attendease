@@ -10,6 +10,7 @@ import { ProfileModal } from './ProfileModal';
 import { Course, AttendanceRecord, Message, Notification } from '../types';
 import { messageService } from '../services/messageService';
 import { Toast } from './Toast';
+import { calculateDistance } from '../utils/location';
 
 export const StudentDashboard: React.FC = () => {
     const { user, signOut } = useAuth();
@@ -179,8 +180,34 @@ export const StudentDashboard: React.FC = () => {
         // handle scan failure, usually better to ignore and keep scanning.
     };
 
+    const logScanAttempt = async (
+        sessionId: string,
+        status: 'success' | 'failed',
+        reason?: string,
+        lat?: number | null,
+        lng?: number | null
+    ) => {
+        try {
+            await supabase.from('scan_logs').insert({
+                session_id: sessionId,
+                student_uid: user?.id,
+                status,
+                failure_reason: reason,
+                latitude: lat,
+                longitude: lng,
+                device_info: navigator.userAgent
+            });
+        } catch (e) {
+            console.error("Failed to log scan attempt", e);
+        }
+    };
+
     const handleAttendance = async (code: string) => {
         setToast(null);
+        let currentSessionId = '';
+        let lat: number | null = null;
+        let lng: number | null = null;
+
         try {
             // 1. Find the session
             const { data: session, error: sessionError } = await supabase
@@ -191,6 +218,8 @@ export const StudentDashboard: React.FC = () => {
                 .single();
 
             if (sessionError || !session) throw new Error("Invalid or inactive session code.");
+
+            currentSessionId = session.id;
 
             // 2. Check if already marked
             const { data: existing, error: checkError } = await supabase
@@ -220,7 +249,39 @@ export const StudentDashboard: React.FC = () => {
                 }
             }
 
-            // 3. Mark attendance
+            // 4. Validation: Location & Metadata
+            let distance: number | null = null;
+            const deviceInfo = navigator.userAgent;
+
+            if (session.max_distance_meters && session.latitude && session.longitude) {
+                try {
+                    setToast({ type: 'info', message: 'Verifying location...' });
+                    const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+                        navigator.geolocation.getCurrentPosition(resolve, reject, {
+                            enableHighAccuracy: true,
+                            timeout: 5000,
+                            maximumAge: 0
+                        });
+                    });
+                    lat = pos.coords.latitude;
+                    lng = pos.coords.longitude;
+
+                    distance = calculateDistance(lat, lng, session.latitude, session.longitude);
+
+                    if (distance > session.max_distance_meters) {
+                        throw new Error(`You are too far from the class! Distance: ${Math.round(distance)}m (Max: ${session.max_distance_meters}m)`);
+                    }
+
+                } catch (error: any) {
+                    if (error.code === 1) throw new Error("Location access denied. Please enable location to mark attendance.");
+                    if (error.message?.includes("too far")) throw error;
+                    // validation failed logic
+                    throw new Error("Could not verify location. Please ensure GPS is enabled.");
+                }
+            }
+
+
+            // 5. Mark attendance
             const { error: insertError } = await supabase
                 .from('attendance')
                 .insert([
@@ -229,17 +290,25 @@ export const StudentDashboard: React.FC = () => {
                         student_uid: user?.id,
                         student_name: user?.user_metadata?.full_name || user?.email,
                         student_id: user?.user_metadata?.student_id_number || 'N/A',
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
+                        latitude: lat,
+                        longitude: lng,
+                        device_info: deviceInfo,
+                        distance_from_session: distance
                     }
                 ]);
 
             if (insertError) throw insertError;
 
+            await logScanAttempt(session.id, 'success', undefined, lat, lng);
             setToast({ type: 'success', message: `Attendance marked for ${session.class_name}!` });
             setScanResult(null); // Reset scan result to allow re-scan if needed (though usually one per session)
 
         } catch (error: any) {
             setToast({ type: 'error', message: error.message });
+            if (currentSessionId) {
+                await logScanAttempt(currentSessionId, 'failed', error.message, lat, lng);
+            }
         }
     };
 

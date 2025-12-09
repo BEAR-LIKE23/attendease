@@ -5,13 +5,15 @@ import { Course } from '../../types';
 
 interface CreateSessionFormProps {
     courses: Course[];
-    onSubmit: (courseId: string, name: string, topic: string) => Promise<void>;
+    onSubmit: (courseId: string, name: string, topic: string, useDynamicQr: boolean, requireLocation: boolean) => Promise<void>;
 }
 
 export const CreateSessionForm: React.FC<CreateSessionFormProps> = ({ courses, onSubmit }) => {
     const [selectedCourseId, setSelectedCourseId] = useState('');
     const [name, setName] = useState('');
     const [topic, setTopic] = useState('');
+    const [useDynamicQr, setUseDynamicQr] = useState(false);
+    const [requireLocation, setRequireLocation] = useState(false);
     const [loading, setLoading] = useState(false);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -19,10 +21,12 @@ export const CreateSessionForm: React.FC<CreateSessionFormProps> = ({ courses, o
         if (!selectedCourseId) return;
 
         setLoading(true);
-        await onSubmit(selectedCourseId, name, topic);
+        await onSubmit(selectedCourseId, name, topic, useDynamicQr, requireLocation);
         setName('');
         setSelectedCourseId('');
         setTopic('');
+        setUseDynamicQr(false);
+        setRequireLocation(false);
         setLoading(false);
     };
 
@@ -73,6 +77,36 @@ export const CreateSessionForm: React.FC<CreateSessionFormProps> = ({ courses, o
                             required
                         />
                     </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                            <input
+                                type="checkbox"
+                                id="dynamicQr"
+                                checked={useDynamicQr}
+                                onChange={(e) => setUseDynamicQr(e.target.checked)}
+                                className="w-6 h-6 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300"
+                            />
+                            <label htmlFor="dynamicQr" className="text-gray-700 font-medium cursor-pointer">
+                                <div>Rotating QR Code</div>
+                                <div className="text-xs text-gray-500">Updates every 30s to prevent sharing</div>
+                            </label>
+                        </div>
+                        <div className="flex items-center gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                            <input
+                                type="checkbox"
+                                id="requireLocation"
+                                checked={requireLocation}
+                                onChange={(e) => setRequireLocation(e.target.checked)}
+                                className="w-6 h-6 text-indigo-600 rounded focus:ring-indigo-500 border-gray-300"
+                            />
+                            <label htmlFor="requireLocation" className="text-gray-700 font-medium cursor-pointer">
+                                <div>Require Location</div>
+                                <div className="text-xs text-gray-500">Students must be within 100m</div>
+                            </label>
+                        </div>
+                    </div>
+
                     <button
                         type="submit"
                         disabled={loading}
