@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { UserRole, ClassSession, AttendanceRecord } from './types';
 import { TeacherDashboard } from './components/TeacherDashboard';
 import { StudentDashboard } from './components/StudentDashboard';
+import { AdminDashboard } from './components/AdminDashboard';
 import { LoginPage } from './components/LoginPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { GraduationCap, BookOpen, LogOut, CheckCircle, Users, TrendingUp, Bell, Award } from 'lucide-react';
@@ -15,17 +16,27 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     if (user) {
       const userRole = user.user_metadata?.role;
-      const actualRole = userRole === 'student' ? UserRole.STUDENT : UserRole.TEACHER;
+      let actualRole = UserRole.NONE;
+
+      // Determine actual role from metadata
+      if (userRole === 'student') actualRole = UserRole.STUDENT;
+      else if (userRole === 'admin') actualRole = UserRole.ADMIN;
+      else actualRole = UserRole.TEACHER; // Default to teacher for staff logic
 
       // 1. If user just landed (role is NONE), auto-detect
       if (role === UserRole.NONE) {
         setRole(actualRole);
       }
-      // 2. If user selected a specific portal but mismatches their metadata -> REJECT
+      // 2. If user selected a specific portal but mismatches their metadata -> CHECK
       else if (role !== actualRole) {
-        alert(`Access Denied. You are registered as a ${userRole?.toUpperCase()} but tried to login to the ${role} portal.`);
-        signOut(); // Log them out immediately
-        setRole(UserRole.NONE); // Return to selection screen
+        // Allow seamless Admin access even if they used "Teacher Portal" entry point
+        if (actualRole === UserRole.ADMIN) {
+          setRole(UserRole.ADMIN);
+        } else {
+          alert(`Access Denied. You are registered as a ${userRole?.toUpperCase()} but tried to login to the ${role} portal.`);
+          signOut(); // Log them out immediately
+          setRole(UserRole.NONE); // Return to selection screen
+        }
       }
     }
   }, [user, role]);
@@ -212,7 +223,7 @@ const AppContent: React.FC = () => {
       </header>
 
       <main className="animate-in fade-in duration-500">
-        {role === UserRole.STUDENT ? <StudentDashboard /> : <TeacherDashboard />}
+        {role === UserRole.STUDENT ? <StudentDashboard /> : role === UserRole.ADMIN ? <AdminDashboard /> : <TeacherDashboard />}
       </main>
     </div>
   );
