@@ -7,9 +7,12 @@ import { LoginPage } from './components/LoginPage';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { GraduationCap, BookOpen, LogOut, CheckCircle, Users, TrendingUp, Bell, Award } from 'lucide-react';
 
+import { Toast } from './components/Toast';
+
 const AppContent: React.FC = () => {
   const { user, signOut } = useAuth();
   const [role, setRole] = useState<UserRole>(UserRole.NONE);
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
   // Auto-redirect based on user role if logged in
   // Auto-redirect or Strict Validation
@@ -40,6 +43,19 @@ const AppContent: React.FC = () => {
       }
     }
   }, [user, role]);
+
+  // Check for Email Confirmation redirect
+  useEffect(() => {
+    // Supabase redirects with #access_token=...&type=signup or &type=magiclink
+    const hash = window.location.hash;
+    if (hash && hash.includes('type=signup')) {
+      setToast({ type: 'success', message: 'Email Successfully Confirmed! Welcome!' });
+      // Clear hash to keep URL clean, but allow AuthContext to process it first?
+      // AuthContext handles it on mount/update so likely already processed.
+      // We can clear it visually only.
+      window.history.replaceState(null, '', ' ');
+    }
+  }, []);
 
   const renderRoleSelection = () => (
     <div className="min-h-screen flex flex-col relative overflow-hidden bg-slate-50">
@@ -211,6 +227,7 @@ const AppContent: React.FC = () => {
   // Authenticated Views
   return (
     <div className="min-h-screen bg-gray-50">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <header className="bg-white shadow-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
