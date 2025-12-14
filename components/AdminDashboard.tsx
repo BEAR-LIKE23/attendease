@@ -103,10 +103,14 @@ export const AdminDashboard: React.FC = () => {
         const { data: sessionsData } = await supabase.from('sessions').select('*').order('created_at', { ascending: false }).limit(200);
         if (sessionsData) {
             // Fetch course names manually since shallow join
-            const courseIds = Array.from(new Set(sessionsData.map(s => s.course_id)));
-            const { data: courses } = await supabase.from('courses').select('id, name, code').in('id', courseIds);
-            const courseMap = (courses || []).reduce((acc, c) => ({ ...acc, [c.id]: c }), {} as Record<string, any>);
-            setSessions(sessionsData.map(s => ({ ...s, course: courseMap[s.course_id] })));
+            const courseIds = Array.from(new Set(sessionsData.map(s => s.course_id))).filter(id => id !== null) as string[];
+            if (courseIds.length > 0) {
+                const { data: courses } = await supabase.from('courses').select('id, name, code').in('id', courseIds);
+                const courseMap = (courses || []).reduce((acc, c) => ({ ...acc, [c.id]: c }), {} as Record<string, any>);
+                setSessions(sessionsData.map(s => ({ ...s, course: courseMap[s.course_id] })));
+            } else {
+                setSessions(sessionsData.map(s => ({ ...s, course: null })));
+            }
         }
     };
 
@@ -407,10 +411,7 @@ export const AdminDashboard: React.FC = () => {
                         color={activeView === 'sessions' ? "ring-2 ring-purple-500 bg-purple-50" : "bg-white"}
                         onClick={() => setActiveView('sessions')}
                     />
-                    <StatCard
-                        title="Total Attendance"
-                        value={stats.totalAttendance}
-                        icon={<ShieldCheck className="text-emerald-500" size={24} />}
+
                     <StatCard
                         title="Total Attendance"
                         value={stats.totalAttendance}
