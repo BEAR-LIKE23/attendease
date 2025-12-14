@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { LogOut, Users, BookOpen, BarChart3, Search, Filter, ShieldCheck, Download, X, Calendar, MapPin, Clock, ArrowLeft, ShieldAlert, History } from 'lucide-react';
+import { LogOut, Users, BookOpen, BarChart3, Search, Filter, ShieldCheck, Download, X, Calendar, MapPin, Clock, ArrowLeft, ShieldAlert, History } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
+import { ReportGenerationModal } from './admin/ReportGenerationModal';
 
 interface AdminStats {
     totalCourses: number;
@@ -30,7 +32,9 @@ export const AdminDashboard: React.FC = () => {
     // Drill-down State
     const [selectedCourse, setSelectedCourse] = useState<any | null>(null);
     const [courseDetails, setCourseDetails] = useState<any | null>(null);
+    const [courseDetails, setCourseDetails] = useState<any | null>(null);
     const [loadingDetails, setLoadingDetails] = useState(false);
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false);
 
     useEffect(() => {
         fetchAdminData();
@@ -447,10 +451,10 @@ export const AdminDashboard: React.FC = () => {
                                 />
                             </div>
                             <button
-                                onClick={handleExport}
+                                onClick={() => setIsReportModalOpen(true)}
                                 className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors font-medium border border-indigo-100"
                             >
-                                <Download size={18} /> <span className="hidden sm:inline">Export CSV</span>
+                                <Download size={18} /> <span className="hidden sm:inline">Advanced Export</span>
                             </button>
                         </div>
                     </div>
@@ -500,6 +504,13 @@ export const AdminDashboard: React.FC = () => {
                         </div>
                     </div>
                 )}
+
+                {/* Report Generation Modal */}
+                <ReportGenerationModal
+                    isOpen={isReportModalOpen}
+                    onClose={() => setIsReportModalOpen(false)}
+                    courses={courses}
+                />
             </main>
         </div>
     );
