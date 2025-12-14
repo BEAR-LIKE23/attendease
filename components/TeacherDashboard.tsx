@@ -358,16 +358,53 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = () => {
         .in('id', studentIds);
 
       if (profilesData) {
+        // Step 3: Get Attendance Stats for these students in this Course
+        // A. Get total sessions for this course
+        const { count: totalSessions } = await supabase
+          .from('sessions')
+          .select('id', { count: 'exact', head: true })
+          .eq('course_id', course.id)
+          .eq('is_active', false); // Only count finished sessions? Or all? Let's use all minus active maybe? Or just all. Usually past sessions matter. Let's say all.
+        // Actually better to count all non-active sessions as "past classes".
+
+        // B. Get attendance counts per student for this course
+        // complicated query, let's fetch all attendance for this course's sessions
+        const { data: courseSessions } = await supabase.from('sessions').select('id').eq('course_id', course.id);
+        const sessionIds = courseSessions?.map(s => s.id) || [];
+
+        let attendanceCounts: Record<string, number> = {};
+        if (sessionIds.length > 0) {
+          const { data: allAttendance } = await supabase
+            .from('attendance')
+            .select('student_uid')
+            .in('session_id', sessionIds);
+
+          allAttendance?.forEach(a => {
+            if (a.student_uid) attendanceCounts[a.student_uid] = (attendanceCounts[a.student_uid] || 0) + 1;
+          });
+        }
+
         // Merge data
         const students = enrollmentData.map(enrollment => {
           const profile = profilesData.find(p => p.id === enrollment.student_uid);
+          const attended = attendanceCounts[enrollment.student_uid] || 0;
+          const total = totalSessions || 0;
+          const rate = total > 0 ? Math.round((attended / total) * 100) : 100; // Default 100 if no sessions yet
+
           return {
             name: profile?.full_name || 'Unknown',
             email: profile?.email || 'No Email',
             studentId: profile?.student_id_number || 'N/A',
-            enrolledAt: enrollment.enrolled_at
+            enrolledAt: enrollment.enrolled_at,
+            attendanceRate: rate,
+            attendedCount: attended,
+            totalSessions: total
           };
         });
+
+        // Sort by attendance rate (lowest first to highlight risks)
+        students.sort((a, b) => a.attendanceRate - b.attendanceRate);
+
         setEnrolledStudents(students);
       }
     } else if (enrollmentError) {

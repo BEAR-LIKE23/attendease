@@ -52,6 +52,7 @@ export const StudentListModal: React.FC<StudentListModalProps> = ({
                                     <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Name</th>
                                     <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">ID</th>
                                     <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Email</th>
+                                    <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Attendance</th>
                                     <th className="p-4 text-xs font-bold text-gray-500 uppercase tracking-wider">Joined</th>
                                 </tr>
                             </thead>
@@ -61,6 +62,22 @@ export const StudentListModal: React.FC<StudentListModalProps> = ({
                                         <td className="p-4 font-medium text-gray-900">{student.name}</td>
                                         <td className="p-4 text-gray-600 font-mono text-sm">{student.studentId}</td>
                                         <td className="p-4 text-gray-600 text-sm">{student.email}</td>
+                                        <td className="p-4">
+                                            <div className="flex items-center gap-2">
+                                                <div className={`w-12 text-center text-sm font-bold rounded px-1.5 py-0.5 ${student.attendanceRate < 75
+                                                        ? 'bg-red-100 text-red-700'
+                                                        : 'bg-green-100 text-green-700'
+                                                    }`}>
+                                                    {student.attendanceRate}%
+                                                </div>
+                                                {student.attendanceRate < 75 && (
+                                                    <span className="text-xs text-red-500 font-medium" title="Below 75% Requirement">
+                                                        ⚠ Low
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <p className="text-xs text-gray-400 mt-1">{student.attendedCount}/{student.totalSessions} sessions</p>
+                                        </td>
                                         <td className="p-4 text-gray-500 text-sm">{new Date(student.enrolledAt).toLocaleDateString()}</td>
                                     </tr>
                                 ))}
