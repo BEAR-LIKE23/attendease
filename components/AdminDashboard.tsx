@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../services/supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { LogOut, Users, BookOpen, BarChart3, Search, Filter, ShieldCheck, Download, X, Calendar, MapPin, Clock, ArrowLeft } from 'lucide-react';
+import { LogOut, Users, BookOpen, BarChart3, Search, Filter, ShieldCheck, Download, X, Calendar, MapPin, Clock, ArrowLeft, ShieldAlert, History } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 interface AdminStats {
     totalCourses: number;
@@ -10,7 +11,7 @@ interface AdminStats {
     totalAttendance: number;
 }
 
-type ViewMode = 'courses' | 'students' | 'sessions' | 'attendance';
+type ViewMode = 'courses' | 'students' | 'sessions' | 'attendance' | 'analytics';
 
 export const AdminDashboard: React.FC = () => {
     const { signOut, user } = useAuth();
@@ -24,6 +25,7 @@ export const AdminDashboard: React.FC = () => {
     const [students, setStudents] = useState<any[]>([]);
     const [sessions, setSessions] = useState<any[]>([]);
     const [attendance, setAttendance] = useState<any[]>([]);
+    const [scanLogs, setScanLogs] = useState<any[]>([]);
 
     // Drill-down State
     const [selectedCourse, setSelectedCourse] = useState<any | null>(null);
@@ -39,6 +41,7 @@ export const AdminDashboard: React.FC = () => {
         if (activeView === 'students' && students.length === 0) fetchStudents();
         if (activeView === 'sessions' && sessions.length === 0) fetchSessions();
         if (activeView === 'attendance' && attendance.length === 0) fetchAttendance();
+        if (activeView === 'analytics' && scanLogs.length === 0) fetchScanLogs();
     }, [activeView]);
 
     const fetchAdminData = async () => {
@@ -110,10 +113,13 @@ export const AdminDashboard: React.FC = () => {
     const fetchAttendance = async () => {
         const { data: attendanceData } = await supabase.from('attendance').select('*').order('timestamp', { ascending: false }).limit(200);
         if (attendanceData) {
-            // Join course details (via session_id -> courses) could be heavy.
-            // For now, simpler view.
             setAttendance(attendanceData);
         }
+    };
+
+    const fetchScanLogs = async () => {
+        const { data } = await supabase.from('scan_logs').select('*');
+        if (data) setScanLogs(data);
     };
 
     const handleViewCourse = async (course: any) => {
@@ -155,6 +161,9 @@ export const AdminDashboard: React.FC = () => {
         } else if (activeView === 'attendance') {
             headers = ['Student Name', 'Student ID', 'Timestamp', 'Device ID', 'Session ID'];
             data = attendance;
+        } else if (activeView === 'analytics') {
+            headers = ['Status', 'Failure Reason', 'Timestamp', 'Latitude', 'Longitude', 'Device ID', 'Session ID'];
+            data = scanLogs;
         }
 
         const csvContent = [
@@ -169,6 +178,8 @@ export const AdminDashboard: React.FC = () => {
                     values.push(`"${row.topic}"`, `"${row.course?.name || 'Deleted'}"`, row.course?.code || 'N/A', row.is_active ? 'Active' : 'Ended', row.created_at, row.id);
                 } else if (activeView === 'attendance') {
                     values.push(`"${row.student_name}"`, row.student_id, row.timestamp, row.device_id || 'N/A', row.session_id);
+                } else if (activeView === 'analytics') {
+                    values.push(row.status, `"${row.failureReason || ''}"`, row.timestamp, row.latitude || '', row.longitude || '', row.device_info?.deviceId || '', row.session_id);
                 }
                 return values.join(',');
             })
@@ -251,6 +262,106 @@ export const AdminDashboard: React.FC = () => {
         />
     );
 
+    const renderAnalytics = () => {
+        const totalScans = scanLogs.length;
+        const failedScans = scanLogs.filter(l => l.status === 'failed').length;
+        const successScans = scanLogs.filter(l => l.status === 'success').length;
+        const fraudRate = totalScans > 0 ? ((failedScans / totalScans) * 100).toFixed(1) : '0';
+
+        const failureReasons = scanLogs
+            .filter(l => l.status === 'failed')
+            .reduce((acc: any, log) => {
+                const reason = log.failureReason || 'Unknown';
+                acc[reason] = (acc[reason] || 0) + 1;
+                return acc;
+            }, {});
+
+        const pieData = Object.keys(failureReasons).map(reason => ({
+            name: reason,
+            value: failureReasons[reason]
+        }));
+
+        const COLORS = ['#ef4444', '#f59e0b', '#8b5cf6', '#06b6d4'];
+
+        return (
+            <div className="p-6 space-y-8 animate-fade-in-up">
+                <h3 className="font-bold text-xl text-gray-800">System Analytics</h3>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="p-6 rounded-2xl border-l-4 border-emerald-500 bg-white shadow-sm">
+                        <p className="text-gray-500 text-sm font-medium uppercase tracking-wider">Total Scans</p>
+                        <p className="text-4xl font-black text-gray-800 mt-2">{totalScans}</p>
+                    </div>
+                    <div className="p-6 rounded-2xl border-l-4 border-red-500 bg-white shadow-sm">
+                        <p className="text-gray-500 text-sm font-medium uppercase tracking-wider">Blocked/Failed</p>
+                        <p className="text-4xl font-black text-red-600 mt-2">{failedScans}</p>
+                    </div>
+                    <div className="p-6 rounded-2xl border-l-4 border-orange-500 bg-white shadow-sm">
+                        <p className="text-gray-500 text-sm font-medium uppercase tracking-wider">Fraud Prevention Rate</p>
+                        <p className="text-4xl font-black text-orange-600 mt-2">{fraudRate}%</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div className="p-8 rounded-2xl bg-white shadow-sm h-[400px]">
+                        <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                            <ShieldAlert className="text-red-500" /> Prevention Reasons
+                        </h3>
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={pieData}
+                                    cx="50%"
+                                    cy="50%"
+                                    outerRadius={100}
+                                    fill="#8884d8"
+                                    dataKey="value"
+                                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                                >
+                                    {pieData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip />
+                                <Legend />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+
+                    <div className="p-8 rounded-2xl bg-white shadow-sm">
+                        <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                            <History className="text-indigo-600" /> System Activity Log
+                        </h3>
+                        <div className="overflow-y-auto h-[300px] custom-scrollbar divide-y divide-gray-100">
+                            {scanLogs.length === 0 ? (
+                                <p className="text-center text-gray-400 py-10">No logs available</p>
+                            ) : (
+                                scanLogs.slice().reverse().map(log => (
+                                    <div key={log.id} className="py-3 flex justify-between items-start">
+                                        <div>
+                                            <p className={`font-bold text-sm ${log.status === 'success' ? 'text-emerald-700' : 'text-red-700'}`}>
+                                                {log.status.toUpperCase()}
+                                            </p>
+                                            {log.failureReason && (
+                                                <p className="text-xs text-red-500 mt-0.5">{log.failureReason}</p>
+                                            )}
+                                            <p className="text-xs text-gray-400 mt-1">{new Date(log.timestamp).toLocaleString()}</p>
+                                        </div>
+                                        {log.latitude && (
+                                            <span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded">
+                                                GPS Captured
+                                            </span>
+                                        )}
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="min-h-screen bg-slate-50">
             {/* Header */}
@@ -300,8 +411,19 @@ export const AdminDashboard: React.FC = () => {
                         title="Total Attendance"
                         value={stats.totalAttendance}
                         icon={<ShieldCheck className="text-emerald-500" size={24} />}
+                    <StatCard
+                        title="Total Attendance"
+                        value={stats.totalAttendance}
+                        icon={<ShieldCheck className="text-emerald-500" size={24} />}
                         color={activeView === 'attendance' ? "ring-2 ring-emerald-500 bg-emerald-50" : "bg-white"}
                         onClick={() => setActiveView('attendance')}
+                    />
+                    <StatCard
+                        title="System Analytics"
+                        value="View"
+                        icon={<ShieldAlert className="text-orange-500" size={24} />}
+                        color={activeView === 'analytics' ? "ring-2 ring-orange-500 bg-orange-50" : "bg-white"}
+                        onClick={() => setActiveView('analytics')}
                     />
                 </div>
 
@@ -341,6 +463,7 @@ export const AdminDashboard: React.FC = () => {
                                 {activeView === 'students' && renderStudents()}
                                 {activeView === 'sessions' && renderSessions()}
                                 {activeView === 'attendance' && renderAttendanceLog()}
+                                {activeView === 'analytics' && renderAnalytics()}
                             </>
                         )}
                     </div>
